@@ -605,7 +605,7 @@ function InstructionBlock({ children }: { children: React.ReactNode }) {
   return <div className="instruction-copy">{children}</div>;
 }
 
-export default function SpeechStudio() {
+export default function SpeechBrigade() {
   const audio = useAudio();
   const [screen, setScreen] = useState<Screen>("landing");
   const [round, setRound] = useState<RoundState>(initialRound);
@@ -761,7 +761,7 @@ export default function SpeechStudio() {
         return (
           <section className="hero">
             <p className="eyebrow">NSDA practice studio</p>
-            <h1>Speech Studio</h1>
+            <h1>Speech Brigade</h1>
             <p className="lede">Practice under pressure.</p>
             <div className="hero-actions">
               <button className="ghost-card" type="button" aria-disabled="true" onClick={audio.unlock}>
@@ -1026,7 +1026,7 @@ export default function SpeechStudio() {
       {screen !== "landing" ? (
         <header className="app-header">
           <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
-            <span>Speech</span> Studio
+            <span>Speech</span> Brigade
           </button>
           <div>{modeLabel}</div>
           <button className="home-button" type="button" onClick={goHome}>Home</button>
@@ -1035,6 +1035,14 @@ export default function SpeechStudio() {
       <div className="screen-frame" key={screen}>
         {content}
       </div>
+      <a
+        className="creator-float"
+        href="https://www.jdhopper.org"
+        aria-label="Click to learn more about website creator JD Hopper"
+      >
+        <span>Creator</span>
+        Click to learn more about website creator JD Hopper
+      </a>
     </main>
   );
 }

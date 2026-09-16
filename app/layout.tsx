@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Speech Studio",
+  title: "Speech Brigade",
   description:
     "A polished NSDA speaking practice app for Impromptu and Extemporaneous rounds.",
   icons: {

@@ -143,6 +143,70 @@ input:focus-visible {
   animation: screenIn 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.creator-float {
+  position: fixed;
+  right: clamp(0.9rem, 2vw, 1.5rem);
+  bottom: clamp(0.9rem, 2vw, 1.5rem);
+  z-index: 20;
+  display: grid;
+  max-width: min(19.5rem, calc(100vw - 1.8rem));
+  gap: 0.22rem;
+  padding: 0.82rem 1rem 0.9rem;
+  border: 1px solid rgba(201, 164, 91, 0.48);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(255, 252, 244, 0.9), rgba(235, 216, 170, 0.82)),
+    var(--paper);
+  box-shadow: 0 18px 60px rgba(20, 18, 12, 0.2);
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 780;
+  line-height: 1.18;
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.creator-float::after {
+  position: absolute;
+  top: 50%;
+  right: 0.82rem;
+  content: "→";
+  color: var(--gold);
+  font-size: 1rem;
+  transform: translateY(-50%);
+}
+
+.creator-float span {
+  color: #7a6028;
+  font-size: 0.66rem;
+  font-weight: 860;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.creator-float:hover {
+  transform: translateY(-3px);
+  border-color: rgba(201, 164, 91, 0.78);
+  box-shadow: 0 24px 78px rgba(20, 18, 12, 0.25);
+}
+
+.creator-float:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.creator-float:focus-visible {
+  outline: 3px solid rgba(201, 164, 91, 0.7);
+  outline-offset: 4px;
+}
+
+.dark-phase .creator-float {
+  background:
+    linear-gradient(145deg, rgba(235, 216, 170, 0.96), rgba(201, 164, 91, 0.86)),
+    var(--champagne);
+  color: #111827;
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.34);
+}
+
 section {
   width: 100%;
 }
@@ -875,6 +939,7 @@ h1 {
 
   .screen-frame {
     min-height: calc(100vh - 4.8rem);
+    padding-bottom: 5.3rem;
   }
 
   .hero-actions,
@@ -911,6 +976,15 @@ h1 {
 
   .timer-ring {
     width: min(82vw, 23rem);
+  }
+
+  .creator-float {
+    right: 0.8rem;
+    bottom: 0.8rem;
+    left: 0.8rem;
+    max-width: none;
+    padding-right: 2.2rem;
+    border-radius: 16px;
   }
 
   .summary-row {
