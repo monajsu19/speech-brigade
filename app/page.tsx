@@ -1059,8 +1059,7 @@ export default function SpeechBrigade() {
         href="https://www.jdhopper.org"
         aria-label="Click to learn more about website creator JD Hopper"
       >
-        <span className="creator-label">CREATOR</span>
-        <span className="creator-copy">CLICK TO LEARN MORE ABOUT WEBSITE CREATOR <u>JD HOPPER</u></span>
+        <span className="creator-copy">Click To Learn More About Website Creator <u>JD Hopper</u></span>
       </a>
     </main>
   );
