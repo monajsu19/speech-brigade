@@ -184,6 +184,12 @@ input:focus-visible {
   text-transform: uppercase;
 }
 
+.creator-float u {
+  text-decoration-color: var(--gold);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
 .creator-float:hover {
   transform: translateY(-3px);
   border-color: rgba(201, 164, 91, 0.78);

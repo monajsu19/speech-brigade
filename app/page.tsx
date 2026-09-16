@@ -394,6 +394,13 @@ function useAudio() {
 
   return {
     unlock: getContext,
+    press: () => {
+      playTone(360, 0.045, "triangle", 0.026);
+      window.setTimeout(() => playTone(520, 0.055, "sine", 0.018), 32);
+    },
+    slotTick: () => {
+      playTone(180 + Math.random() * 70, 0.035, "square", 0.018);
+    },
     ding: () => {
       playTone(720, 0.11, "sine", 0.045);
       window.setTimeout(() => playTone(960, 0.16, "triangle", 0.035), 70);
@@ -674,6 +681,7 @@ export default function SpeechBrigade() {
     let iterations = 0;
     const interval = window.setInterval(() => {
       iterations += 1;
+      audio.slotTick();
       setThemeDisplay(randomItem(themeBank).theme);
       if (iterations > 22) {
         window.clearInterval(interval);
@@ -690,10 +698,16 @@ export default function SpeechBrigade() {
     audio.unlock();
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setLockedChoice("");
+    const tickIntervals: number[] = [];
 
     items.forEach((item, index) => {
-      window.setTimeout(() => setActiveSlot(index), index * 1450);
       window.setTimeout(() => {
+        setActiveSlot(index);
+        audio.slotTick();
+        tickIntervals[index] = window.setInterval(() => audio.slotTick(), 92);
+      }, index * 1450);
+      window.setTimeout(() => {
+        if (tickIntervals[index]) window.clearInterval(tickIntervals[index]);
         setSlotItems((current) => current.map((slot, slotIndex) => (slotIndex === index ? item : slot)));
         setActiveSlot(null);
         audio.ding();
@@ -754,6 +768,11 @@ export default function SpeechBrigade() {
   const warningTone = (second: number) => audio.countdown(second === 0);
 
   const selectedPrompt = round.mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
+  const playInteractionSound = (event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest("button:not(:disabled), a[href]")) return;
+    audio.press();
+  };
 
   const content = useMemo(() => {
     switch (screen) {
@@ -1021,7 +1040,7 @@ export default function SpeechBrigade() {
   }, [screen, round, allocationIndex, activeSlot, slotItems, lockedChoice, themeDisplay, themeSpinning]);
 
   return (
-    <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`}>
+    <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`} onPointerDownCapture={playInteractionSound}>
       <div className="ambient" aria-hidden="true" />
       {screen !== "landing" ? (
         <header className="app-header">
@@ -1040,8 +1059,8 @@ export default function SpeechBrigade() {
         href="https://www.jdhopper.org"
         aria-label="Click to learn more about website creator JD Hopper"
       >
-        <span>Creator</span>
-        Click to learn more about website creator JD Hopper
+        <span>CREATOR</span>
+        CLICK TO LEARN MORE ABOUT WEBSITE CREATOR <u>JD HOPPER</u>
       </a>
     </main>
   );
