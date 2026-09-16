@@ -341,6 +341,48 @@ const allocationOptions = [
   { prep: 240, delivery: 180 },
 ];
 
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "Speech Brigade",
+  applicationCategory: "EducationalApplication",
+  operatingSystem: "Any",
+  url: "https://speech-studio-nsda.zeldatf2potato.chatgpt.site",
+  creator: {
+    "@type": "Person",
+    name: "JD Hopper",
+    url: "https://www.jdhopper.org",
+  },
+  audience: [
+    {
+      "@type": "EducationalAudience",
+      educationalRole: "student",
+    },
+    {
+      "@type": "EducationalAudience",
+      educationalRole: "teacher",
+    },
+    {
+      "@type": "EducationalAudience",
+      educationalRole: "coach",
+    },
+  ],
+  about: [
+    "National Speech & Debate Association practice",
+    "Extemporaneous Speaking",
+    "Impromptu Speaking",
+    "high school speech and debate",
+    "college public speaking practice",
+  ],
+  description:
+    "A polished speaking practice web app for schools, high school students, college students, teachers, and coaches preparing for National Speech & Debate Association Extemporaneous Speaking and Impromptu Speaking rounds.",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
+
 function formatTime(totalSeconds: number) {
   const seconds = Math.max(0, Math.ceil(totalSeconds));
   const minutes = Math.floor(seconds / 60);
@@ -1041,6 +1083,10 @@ export default function SpeechBrigade() {
 
   return (
     <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`} onPointerDownCapture={playInteractionSound}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       <div className="ambient" aria-hidden="true" />
       {screen !== "landing" ? (
         <header className="app-header">
