@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Speech Brigade",
   description:
-    "A polished NSDA speaking practice app for Impromptu and Extemporaneous rounds.",
+    "A polished National Speech & Debate Association speaking practice app for Impromptu and Extemporaneous rounds.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

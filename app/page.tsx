@@ -779,7 +779,7 @@ export default function SpeechBrigade() {
       case "landing":
         return (
           <section className="hero">
-            <p className="eyebrow">NSDA practice studio</p>
+            <p className="eyebrow">National Speech & Debate Association practice studio</p>
             <h1>Speech Brigade</h1>
             <p className="lede">Practice under pressure.</p>
             <div className="hero-actions">
@@ -788,7 +788,7 @@ export default function SpeechBrigade() {
                 <small>Coming soon</small>
               </button>
               <button className="primary-card" type="button" onClick={() => setScreen("events")}>
-                <span>NSDA Mode</span>
+                <span>National Speech & Debate Association Mode</span>
                 <small>Impromptu and Extemp rounds</small>
               </button>
             </div>
@@ -1059,8 +1059,8 @@ export default function SpeechBrigade() {
         href="https://www.jdhopper.org"
         aria-label="Click to learn more about website creator JD Hopper"
       >
-        <span>CREATOR</span>
-        CLICK TO LEARN MORE ABOUT WEBSITE CREATOR <u>JD HOPPER</u>
+        <span className="creator-label">CREATOR</span>
+        <span className="creator-copy">CLICK TO LEARN MORE ABOUT WEBSITE CREATOR <u>JD HOPPER</u></span>
       </a>
     </main>
   );

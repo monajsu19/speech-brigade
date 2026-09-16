@@ -148,10 +148,11 @@ input:focus-visible {
   right: clamp(0.9rem, 2vw, 1.5rem);
   bottom: clamp(0.9rem, 2vw, 1.5rem);
   z-index: 20;
-  display: grid;
-  max-width: min(19.5rem, calc(100vw - 1.8rem));
-  gap: 0.22rem;
-  padding: 0.82rem 1rem 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(36rem, calc(100vw - 1.8rem));
+  gap: 0.65rem;
+  padding: 0.82rem 2.35rem 0.9rem 1rem;
   border: 1px solid rgba(201, 164, 91, 0.48);
   border-radius: 18px;
   background:
@@ -176,12 +177,18 @@ input:focus-visible {
   transform: translateY(-50%);
 }
 
-.creator-float span {
+.creator-label {
   color: #7a6028;
   font-size: 0.66rem;
   font-weight: 860;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.creator-copy {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .creator-float u {
@@ -991,6 +998,8 @@ h1 {
     max-width: none;
     padding-right: 2.2rem;
     border-radius: 16px;
+    font-size: 0.64rem;
+    gap: 0.45rem;
   }
 
   .summary-row {
