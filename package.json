@@ -18,7 +18,9 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "drizzle-orm": "0.45.2",
+    "mammoth": "^1.12.3",
     "next": "16.2.6",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
