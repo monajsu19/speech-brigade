@@ -1,4 +1,3 @@
 {
-  "buildCommand": "pnpm run netlify:build",
-  "outputDirectory": "out"
+  "buildCommand": "pnpm run netlify:build"
 }
