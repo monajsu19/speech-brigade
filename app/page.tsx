@@ -1,16 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase, supabaseUrl } from "./supabaseClient";
+import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
 
 type EventMode = "impromptu" | "extemp";
+type PreparedEventId = "oo" | "inf" | "di" | "hi" | "duo" | "poi";
+type AnalysisMode = EventMode | PreparedEventId;
+type PreparedEventCategory = "prepared" | "interpretation";
+type CompletionStatus = "manual" | "expired";
+type SpeakingGameId = "hotSeat" | "wordFusion" | "storyRelay" | "landPlane";
 type Screen =
   | "landing"
+  | "gamesSelection"
+  | "gameInstructions"
+  | "hotSeatReveal"
+  | "wordFusionSpin"
+  | "storyRelaySetup"
+  | "landPlaneSetup"
+  | "gamePrepCountdown"
+  | "gameChallenge"
+  | "gameResults"
   | "eventsAuth"
   | "events"
+  | "preparedSelection"
+  | "interpretationSelection"
+  | "preparedEventIntro"
+  | "speechWorkspace"
+  | "preparedDeliveryCountdown"
+  | "preparedPerformance"
+  | "preparedResults"
   | "signIn"
   | "settings"
+  | "pastSpeeches"
   | "impromptuIntro"
   | "timeAllocation"
   | "themeSpin"
@@ -29,9 +52,8 @@ type Screen =
   | "results"
   | "vaultAnalysis";
 
-// impromptu scores organization/analysis/delivery; extemp scores
-// argumentationAnalysis/sourceConsideration/delivery. Only 3 of these 5 keys
-// are ever populated on a given AnalysisResult, depending on mode.
+// Current analyses use organization/analysis/delivery for every event.
+// The legacy Extemp keys remain here so older saved rounds still render.
 type CategoryKey = "organization" | "analysis" | "delivery" | "argumentationAnalysis" | "sourceConsideration";
 type WeakAxis = CategoryKey | "grammar" | "vocab";
 type GrammarSubcategory = "agreement" | "verbTense" | "sentenceStructure" | "wordUsage";
@@ -115,7 +137,7 @@ interface TranscriptData {
 interface VaultRecording {
   id: string;
   prompt: string;
-  mode: EventMode;
+  mode: AnalysisMode;
   duration_seconds: number | null;
   transcript: string | null;
   transcript_data: TranscriptData | null;
@@ -130,6 +152,89 @@ type AnalyzingStage = "uploading" | "transcribing" | "analyzing";
 type ThemeBank = { theme: string; topics: string[] };
 type ExtempQuestion = { category: string; question: string };
 type SlotItem = { value: string; label?: string };
+
+interface PreparedEventConfig {
+  id: PreparedEventId;
+  category: PreparedEventCategory;
+  name: string;
+  acronym: string;
+  shortDescription: string;
+  welcomeTitle: string;
+  introParagraphs: string[];
+  objectiveParagraph: string;
+  expectationsParagraph: string;
+  futureWorkflowParagraph: string;
+  performanceDurationSeconds: number;
+  aiModalTitle: string;
+  aiModalBody: string;
+}
+
+interface PreparedPerformanceResult {
+  eventId: PreparedEventId;
+  elapsedSeconds: number;
+  completion: CompletionStatus;
+  analysis: AnalysisResult | null;
+  analysisTranscript: string;
+  analysisTranscriptData: TranscriptData | null;
+  analysisAudioUrl: string;
+  analysisError: string | null;
+}
+
+interface PreparedScriptContext {
+  fileName: string;
+  text: string;
+  status: "ready" | "empty" | "error";
+  message: string;
+}
+
+interface CompletedAnalysis {
+  analysis: AnalysisResult;
+  transcript: string;
+  transcriptData: TranscriptData | null;
+  audioUrl: string;
+}
+
+interface InfoModalContent {
+  title: string;
+  body: string[];
+  badge?: string;
+}
+
+interface SpeakingGameConfig {
+  id: SpeakingGameId;
+  name: string;
+  tagline: string;
+  description: string;
+  durationLabel: string;
+  durationSeconds: number;
+  icon: string;
+  welcomeTitle: string;
+  instructionParagraphs: string[];
+  setupScreen: Screen;
+  challengeLabel: string;
+  resultTitle: string;
+  tip: string;
+  retryLabel: string;
+}
+
+interface SpeechOutline {
+  topic: string;
+  centralMessage: string;
+  supportingIdeas: string[];
+  direction: string;
+}
+
+interface SpeakingGameSession {
+  gameId: SpeakingGameId;
+  question?: string;
+  words?: string[];
+  openingLine?: string;
+  twists?: string[];
+  activeTwistIndex?: number;
+  outline?: SpeechOutline;
+  elapsedSeconds?: number;
+  completion?: CompletionStatus;
+}
 
 type RoundState = {
   mode: EventMode | null;
@@ -168,6 +273,357 @@ const initialRound: RoundState = {
   analysisAudioUrl: "",
   analysisError: null,
 };
+
+const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
+  oo: {
+    id: "oo",
+    category: "prepared",
+    name: "Original Oratory",
+    acronym: "OO",
+    shortDescription: "Present an original speech designed to inform, inspire, or persuade.",
+    welcomeTitle: "Welcome to Original Oratory",
+    introParagraphs: [
+      "Original Oratory challenges you to develop and deliver an original speech that communicates a compelling message.",
+      "Your speech may address an important issue, challenge an audience's perspective, or inspire meaningful reflection or action.",
+    ],
+    objectiveParagraph:
+      "Your goal is to present a clear central argument, support your ideas with meaningful evidence and examples, and connect with your audience through confident, engaging delivery.",
+    expectationsParagraph:
+      "Prepare a polished original speech and practice delivering it under tournament-style timing with clear structure, purposeful emphasis, and confident audience engagement.",
+    futureWorkflowParagraph:
+      "In Speech Brigade, you will be able to upload your written speech, receive feedback on your writing, and receive recommendations for improving your performance. For now, you can practice delivering your speech under tournament-style timing.",
+    performanceDurationSeconds: 600,
+    aiModalTitle: "Writing & Delivery Coaching",
+    aiModalBody:
+      "Soon, Speech Brigade will analyze your written Original Oratory and provide personalized recommendations for improving its argument, organization, evidence, clarity, and rhetorical impact.\n\nIt will also offer performance advice, including recommendations for pacing, emphasis, transitions, vocal delivery, and audience engagement.\n\nThe goal is to help you strengthen both what you say and how you say it.",
+  },
+  inf: {
+    id: "inf",
+    category: "prepared",
+    name: "Informative Speaking",
+    acronym: "INF",
+    shortDescription: "Teach your audience something new through a clear, engaging presentation.",
+    welcomeTitle: "Welcome to Informative Speaking",
+    introParagraphs: [
+      "Informative Speaking challenges you to teach your audience something meaningful through a clear, engaging, and well-organized presentation.",
+      "Strong informative speeches use logical organization, clear explanations, relevant examples, and effective delivery.",
+    ],
+    objectiveParagraph:
+      "Your goal is to make a subject understandable while maintaining your audience's interest.",
+    expectationsParagraph:
+      "Prepare a clear presentation, incorporate visual aids when permitted by the applicable tournament rules, and practice explaining complex information with engaging delivery.",
+    futureWorkflowParagraph:
+      "Speech Brigade will eventually allow you to upload your written speech for feedback on its content, structure, and presentation. For now, you can practice delivering your speech under tournament-style timing and review your performance afterward.",
+    performanceDurationSeconds: 600,
+    aiModalTitle: "Writing & Delivery Coaching",
+    aiModalBody:
+      "Soon, Speech Brigade will analyze your written Informative speech and provide personalized feedback on organization, clarity, explanation, supporting examples, and audience understanding.\n\nIt will also recommend ways to improve your delivery, including pacing, emphasis, transitions, and the effective presentation of complex information.\n\nThe goal is to help you make your topic engaging, accessible, and memorable.",
+  },
+  di: {
+    id: "di",
+    category: "interpretation",
+    name: "Dramatic Interpretation",
+    acronym: "DI",
+    shortDescription: "Bring a dramatic literary selection to life through characterization and emotional expression.",
+    welcomeTitle: "Welcome to Dramatic Interpretation",
+    introParagraphs: [
+      "Dramatic Interpretation challenges you to bring a literary selection to life through a compelling solo performance.",
+      "Focus on creating a believable performance that allows your audience to understand and connect with the story.",
+    ],
+    objectiveParagraph:
+      "Your goal is to communicate the meaning of the selection through characterization, vocal variety, emotional development, and purposeful physical expression.",
+    expectationsParagraph:
+      "Prepare your selected literary performance and practice shaping character, emotion, pacing, and dramatic transitions within a focused performance.",
+    futureWorkflowParagraph:
+      "You will eventually be able to upload your selected performance script and receive recommendations tailored to its characters, themes, and dramatic structure. For now, you can practice your performance under tournament-style timing and review your results afterward.",
+    performanceDurationSeconds: 600,
+    aiModalTitle: "Performance Coaching",
+    aiModalBody:
+      "Soon, Speech Brigade will analyze your selected Dramatic Interpretation script and offer personalized recommendations for bringing it to life.\n\nFeedback will focus on characterization, emotional progression, vocal variety, pacing, dramatic transitions, and the overall meaning of the selection.\n\nThis feature will focus on interpreting and performing the literary work, rather than treating it as an original speech you wrote.",
+  },
+  hi: {
+    id: "hi",
+    category: "interpretation",
+    name: "Humorous Interpretation",
+    acronym: "HI",
+    shortDescription: "Entertain through comedic storytelling, characterization, and timing.",
+    welcomeTitle: "Welcome to Humorous Interpretation",
+    introParagraphs: [
+      "Humorous Interpretation challenges you to bring a literary selection to life through comedic performance.",
+      "Focus on making your characterization clear and your performance engaging.",
+    ],
+    objectiveParagraph:
+      "Your goal is to entertain your audience while communicating a coherent story through distinct characters, effective pacing, vocal variety, and strong comedic timing.",
+    expectationsParagraph:
+      "Prepare your selected performance and practice character differentiation, comedic rhythm, transitions, and storytelling under tournament-style timing.",
+    futureWorkflowParagraph:
+      "You will eventually be able to upload your performance script and receive recommendations for characterization, delivery, pacing, and comedic effect. For now, you can practice your performance under tournament-style timing and review your results afterward.",
+    performanceDurationSeconds: 600,
+    aiModalTitle: "Performance Coaching",
+    aiModalBody:
+      "Soon, Speech Brigade will analyze your Humorous Interpretation script and offer personalized recommendations for character differentiation, comedic timing, pacing, vocal variety, transitions, and storytelling.\n\nThe goal is to help you create a clearer, more entertaining, and more cohesive performance.",
+  },
+  duo: {
+    id: "duo",
+    category: "interpretation",
+    name: "Duo Interpretation",
+    acronym: "DUO",
+    shortDescription: "Perform a literary selection with a partner through coordinated characterization and delivery.",
+    welcomeTitle: "Welcome to Duo Interpretation",
+    introParagraphs: [
+      "Duo Interpretation is a two-person performance of a literary selection.",
+      "Both performers should contribute to a unified and engaging presentation.",
+    ],
+    objectiveParagraph:
+      "Your goal is to create a cohesive interpretation through coordinated characterization, effective timing, vocal variety, and strong storytelling.",
+    expectationsParagraph:
+      "Prepare with your partner and practice timing, coordination, transitions, and shared storytelling through the full performance.",
+    futureWorkflowParagraph:
+      "Speech Brigade will eventually support uploading your performance script and receiving recommendations for characterization, pacing, transitions, and coordination between performers. For now, you can use the performance timer to practice your piece with your partner.",
+    performanceDurationSeconds: 600,
+    aiModalTitle: "Duo Performance Coaching",
+    aiModalBody:
+      "Soon, Speech Brigade will analyze your Duo Interpretation script and offer recommendations for both performers.\n\nFeedback will focus on characterization, coordination, timing, transitions, vocal variety, and the overall cohesion of the performance.\n\nThe goal is to help both speakers work together to deliver a unified interpretation of the selection.",
+  },
+  poi: {
+    id: "poi",
+    category: "interpretation",
+    name: "Program Oral Interpretation",
+    acronym: "POI",
+    shortDescription: "Combine multiple literary selections into a unified performance centered on a common theme.",
+    welcomeTitle: "Welcome to Program Oral Interpretation",
+    introParagraphs: [
+      "Program Oral Interpretation challenges you to combine multiple literary selections into one cohesive performance.",
+      "Your program should explore a central theme or message through a purposeful combination of literary material.",
+    ],
+    objectiveParagraph:
+      "Your goal is to create a unified presentation through thoughtful organization, effective transitions, vocal variety, and meaningful interpretation.",
+    expectationsParagraph:
+      "Prepare your program with a clear thematic purpose and practice transitions, vocal variety, characterization, and the overall arc of the performance.",
+    futureWorkflowParagraph:
+      "You will eventually be able to upload your program script and receive feedback on its structure, thematic development, transitions, and performance. For now, you can practice your program under tournament-style timing and review your results afterward.",
+    performanceDurationSeconds: 600,
+    aiModalTitle: "Program Coaching",
+    aiModalBody:
+      "Soon, Speech Brigade will analyze your Program Oral Interpretation script and provide recommendations for improving the cohesion and impact of your program.\n\nFeedback will focus on thematic development, organization, transitions between selections, vocal variety, characterization, and the effectiveness of the overall performance.\n\nThe goal is to help the individual selections come together into one meaningful presentation.",
+  },
+};
+
+const PREPARED_EVENT_IDS: PreparedEventId[] = ["oo", "inf"];
+const INTERPRETATION_EVENT_IDS: PreparedEventId[] = ["di", "hi", "duo", "poi"];
+
+const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
+  hotSeat: {
+    id: "hotSeat",
+    name: "The Hot Seat",
+    tagline: "Think fast. Speak with confidence.",
+    description: "A rapid-fire challenge where students respond to unexpected questions.",
+    durationLabel: "90 sec",
+    durationSeconds: 90,
+    icon: "?",
+    welcomeTitle: "Welcome to The Hot Seat",
+    instructionParagraphs: [
+      "Think fast. Speak with confidence.",
+      "You will receive a surprise question and have just a few seconds to prepare.",
+      "Your challenge is to deliver a complete response in 90 seconds.",
+      "Start with a clear answer, develop your ideas using a reason or example, and finish with a strong conclusion.",
+      "You do not need a perfect answer. Focus on thinking clearly and keeping your speech moving.",
+      "When you are ready, begin the challenge.",
+    ],
+    setupScreen: "hotSeatReveal",
+    challengeLabel: "Your Response",
+    resultTitle: "You survived the Hot Seat.",
+    tip: "A strong short response clearly answers the question, develops an idea, and finishes with purpose.",
+    retryLabel: "Try Another Question",
+  },
+  wordFusion: {
+    id: "wordFusion",
+    name: "Word Fusion",
+    tagline: "Three words. One coherent speech.",
+    description: "Connect three random words naturally in a single creative speech.",
+    durationLabel: "60 sec",
+    durationSeconds: 60,
+    icon: "3",
+    welcomeTitle: "Welcome to Word Fusion",
+    instructionParagraphs: [
+      "Three random words. One connected speech.",
+      "You will spin three slot machines to reveal three unrelated words.",
+      "Your challenge is to connect all three words naturally in a single 60-second speech.",
+      "You can tell a story, make an argument, create an analogy, or find an unexpected connection.",
+      "The goal is to make your speech feel coherent rather than simply listing the words.",
+      "You will have five seconds to prepare before speaking.",
+    ],
+    setupScreen: "wordFusionSpin",
+    challengeLabel: "Connect the Words",
+    resultTitle: "Connection complete.",
+    tip: "The strongest connections create one unified idea rather than three unrelated observations.",
+    retryLabel: "Spin Again",
+  },
+  storyRelay: {
+    id: "storyRelay",
+    name: "Story Relay",
+    tagline: "Keep the story alive.",
+    description: "Continue an evolving story while adapting to unexpected plot twists.",
+    durationLabel: "3 min",
+    durationSeconds: 180,
+    icon: "↗",
+    welcomeTitle: "Welcome to Story Relay",
+    instructionParagraphs: [
+      "Every great story begins somewhere. Where it goes next is up to you.",
+      "You will receive the opening line of a story.",
+      "Your challenge is to continue it out loud.",
+      "As you speak, unexpected plot twists will appear. You must incorporate each twist into your story while keeping the narrative moving.",
+      "The challenge lasts three minutes.",
+      "Focus on creativity, clear storytelling, and connecting each new development to what came before.",
+    ],
+    setupScreen: "storyRelaySetup",
+    challengeLabel: "Story Relay",
+    resultTitle: "Story complete.",
+    tip: "Strong improvisational storytelling connects new developments to the existing narrative rather than abandoning the story each time something changes.",
+    retryLabel: "New Story",
+  },
+  landPlane: {
+    id: "landPlane",
+    name: "Land the Plane",
+    tagline: "Finish with impact.",
+    description: "Deliver a concise, memorable conclusion to a partially built speech.",
+    durationLabel: "20 sec",
+    durationSeconds: 20,
+    icon: "⌁",
+    welcomeTitle: "Welcome to Land the Plane",
+    instructionParagraphs: [
+      "A great speech deserves a great ending.",
+      "You will receive a short speech outline containing a topic, central argument, and supporting points.",
+      "Your challenge is to deliver a compelling conclusion in just 20 seconds.",
+      "Reinforce the central message, bring the ideas together, and finish with a memorable final statement.",
+      "Avoid introducing an entirely new argument at the end.",
+      "Make your final words count.",
+    ],
+    setupScreen: "landPlaneSetup",
+    challengeLabel: "Your Conclusion",
+    resultTitle: "Perfect landing.",
+    tip: "A strong conclusion reinforces the central message, connects the main ideas, and leaves the audience with a memorable final thought.",
+    retryLabel: "Try Another Speech",
+  },
+};
+
+const SPEAKING_GAME_IDS: SpeakingGameId[] = ["hotSeat", "wordFusion", "storyRelay", "landPlane"];
+
+const hotSeatQuestions = [
+  "What is one lesson everyone should learn before graduating high school?",
+  "What makes someone a good leader?",
+  "Is failure necessary for success?",
+  "What is one thing schools should teach but often don't?",
+  "What is more important: talent or hard work?",
+  "What is the most valuable skill a student can develop?",
+  "Should people take more risks?",
+  "What makes a friendship last?",
+  "What is one invention you couldn't live without?",
+  "What does confidence mean to you?",
+  "What is something people often misunderstand about teenagers?",
+  "What makes a great teacher?",
+  "Is competition good for personal growth?",
+  "What is the most important quality of a teammate?",
+  "What is one habit everyone should develop?",
+  "What makes a person inspiring?",
+  "What would you change about the traditional school day?",
+  "Why is communication important?",
+  "What is one piece of advice you would give your younger self?",
+  "What makes an experience memorable?",
+  "Is being busy the same as being productive?",
+  "What is one thing that deserves more appreciation?",
+  "Why do people fear public speaking?",
+  "What is the difference between being smart and being wise?",
+  "What makes a community strong?",
+  "What should success look like?",
+  "What can sports teach us about life?",
+  "Is curiosity more valuable than knowledge?",
+  "What makes an apology meaningful?",
+  "How can students become more independent?",
+];
+
+const wordFusionBank = [
+  "Umbrella", "Mirror", "Clock", "Key", "Backpack", "Bicycle", "Candle", "Telephone", "Ladder", "Notebook",
+  "Penguin", "Elephant", "Dolphin", "Tiger", "Butterfly", "Turtle", "Eagle", "Octopus", "Horse", "Fox",
+  "Desert", "Library", "Airport", "Castle", "Forest", "Beach", "Mountain", "Classroom", "Museum", "Island",
+  "Robot", "Smartphone", "Satellite", "Drone", "Algorithm", "Camera", "Computer", "Rocket", "Microphone", "Battery",
+  "Victory", "Courage", "Mystery", "Freedom", "Trust", "Hope", "Change", "Adventure", "Success", "Time",
+  "Pizza", "Homework", "Coffee", "Rain", "Traffic", "Music", "Birthday", "Shoes", "Shopping", "Vacation",
+  "Bridge", "Compass", "Lantern", "Garden", "Train", "Window", "Ocean", "Pencil", "Puzzle", "Mailbox",
+  "Volcano", "River", "Stadium", "Theater", "Kitchen", "Planet", "Telescope", "Headphones", "Cloud", "Snow",
+  "Treasure", "Anchor", "Festival", "Ribbon", "Marathon", "Recipe", "Backstage", "Campfire", "Whistle", "Sculpture",
+  "Helmet", "Suitcase", "Calendar", "Footprint", "Sunrise", "Echo", "Blueprint", "Parade", "Handshake", "Flashlight",
+  "Kite", "Labyrinth", "Medal", "Orchestra", "Passport", "Quilt", "Rainbow", "Sandbox", "Ticket", "Waterfall",
+];
+
+const storyOpenings = [
+  "I opened the door and found a mysterious package.",
+  "Everything changed when the lights suddenly went out.",
+  "The letter arrived exactly twenty years too late.",
+  "Nobody believed me when I said I had seen it.",
+  "It was supposed to be an ordinary Tuesday.",
+  "The elevator stopped on a floor that didn't exist.",
+  "I knew something was wrong when the clock started moving backward.",
+  "The stranger handed me a key and disappeared.",
+  "Our school announced a competition nobody had heard of.",
+  "The last person I expected to see was standing at the door.",
+  "I found a map hidden inside an old book.",
+  "The entire town woke up to the same mysterious message.",
+  "The robot was only supposed to make breakfast.",
+  "My best friend told me a secret that changed everything.",
+  "The train arrived at a station that wasn't on the map.",
+  "I received a phone call from my future self.",
+  "The museum's most valuable exhibit had disappeared.",
+  "Everyone forgot what happened yesterday except me.",
+  "The storm revealed something buried beneath the sand.",
+  "The moment I pressed the red button, everything went silent.",
+];
+
+const storyTwists = [
+  "An unexpected visitor arrives.",
+  "Someone reveals a surprising secret.",
+  "The object everyone was searching for disappears.",
+  "A trusted friend changes sides.",
+  "The main character discovers an unusual ability.",
+  "The setting suddenly changes.",
+  "A seemingly harmless decision has major consequences.",
+  "Someone receives an urgent message.",
+  "An important object breaks.",
+  "A stranger offers an unexpected deal.",
+  "The main character must make a difficult choice.",
+  "A forgotten memory returns.",
+  "A new character challenges everything the hero believes.",
+  "The solution creates an even bigger problem.",
+  "Someone recognizes a familiar face in an unexpected place.",
+  "An ordinary object turns out to be extraordinary.",
+  "The main character discovers they have been followed.",
+  "A celebration is interrupted.",
+  "An important deadline suddenly moves closer.",
+  "The original problem was not what it seemed.",
+];
+
+const landPlaneOutlines: SpeechOutline[] = [
+  { topic: "The Importance of Teamwork", centralMessage: "People accomplish more when they work together.", supportingIdeas: ["Different people contribute different strengths.", "Collaboration helps overcome challenges.", "Shared success creates stronger relationships."], direction: "Tie the points together and end with a memorable final line." },
+  { topic: "Why Failure Helps Us Grow", centralMessage: "Mistakes can become powerful teachers.", supportingIdeas: ["Failure reveals what needs improvement.", "Resilience grows through recovery.", "Many breakthroughs begin with setbacks."], direction: "Reframe failure as a step toward progress." },
+  { topic: "The Value of Friendship", centralMessage: "Strong friendships help people feel supported and understood.", supportingIdeas: ["Friends celebrate success.", "Friends provide honesty during hard moments.", "Trust makes challenges easier to face."], direction: "End with a clear statement about why friendship matters." },
+  { topic: "Why Students Should Read More", centralMessage: "Reading expands knowledge, empathy, and imagination.", supportingIdeas: ["Books introduce new perspectives.", "Reading strengthens communication.", "Stories help people understand others."], direction: "Invite the audience to see reading as exploration." },
+  { topic: "Trying New Things", centralMessage: "Growth often begins outside a person's comfort zone.", supportingIdeas: ["New experiences reveal hidden strengths.", "Trying builds confidence.", "Exploration can lead to unexpected opportunities."], direction: "Close with a call to take the first step." },
+  { topic: "Why Kindness Matters", centralMessage: "Small acts of kindness can change the tone of a community.", supportingIdeas: ["Kindness makes people feel seen.", "It encourages others to act generously.", "It builds trust in everyday life."], direction: "Finish with an image of kindness spreading outward." },
+  { topic: "The Value of Perseverance", centralMessage: "Consistent effort can carry people through difficulty.", supportingIdeas: ["Progress is often gradual.", "Obstacles test commitment.", "Persistence turns goals into habits."], direction: "Make the ending feel determined and hopeful." },
+  { topic: "Why Creativity Is Important", centralMessage: "Creativity helps people solve problems and express who they are.", supportingIdeas: ["Creative thinking finds new solutions.", "Art and ideas connect people.", "Innovation depends on imagination."], direction: "End by celebrating original thinking." },
+  { topic: "Protecting the Environment", centralMessage: "People share responsibility for caring for the planet.", supportingIdeas: ["Daily choices add up.", "Nature supports human life.", "Future generations inherit today's decisions."], direction: "Close with urgency and responsibility." },
+  { topic: "Why Communication Matters", centralMessage: "Clear communication builds understanding and prevents conflict.", supportingIdeas: ["Listening shows respect.", "Words shape relationships.", "Honest communication solves problems faster."], direction: "End with a concise reminder about the power of words." },
+  { topic: "The Power of Small Habits", centralMessage: "Small repeated actions can create major change over time.", supportingIdeas: ["Habits shape daily routines.", "Consistency compounds results.", "Small wins build motivation."], direction: "Leave the audience with one practical image of steady progress." },
+  { topic: "Learning from Mistakes", centralMessage: "Mistakes become valuable when people reflect and adjust.", supportingIdeas: ["Reflection turns errors into lessons.", "Accountability builds maturity.", "Trying again develops skill."], direction: "End with a confident line about improvement." },
+  { topic: "Leadership and Responsibility", centralMessage: "Real leadership means serving others, not just being in charge.", supportingIdeas: ["Leaders set examples.", "They make decisions that affect others.", "Responsibility builds trust."], direction: "Close by redefining leadership as service." },
+  { topic: "The Value of Curiosity", centralMessage: "Curiosity keeps people learning and asking better questions.", supportingIdeas: ["Questions lead to discovery.", "Curiosity makes learning active.", "It helps people understand the world more deeply."], direction: "End with an invitation to keep wondering." },
+  { topic: "Confidence Through Preparation", centralMessage: "Confidence grows when people prepare with purpose.", supportingIdeas: ["Practice reduces fear.", "Preparation creates options.", "Knowing the material frees a speaker to connect."], direction: "Finish with a line linking effort to courage." },
+  { topic: "Community Service", centralMessage: "Serving others strengthens both individuals and communities.", supportingIdeas: ["Service meets real needs.", "It builds empathy.", "It reminds people they can make a difference."], direction: "Close with a sense of shared responsibility." },
+  { topic: "Using Time Wisely", centralMessage: "Time becomes meaningful when people spend it intentionally.", supportingIdeas: ["Priorities shape choices.", "Wasted time can become missed opportunity.", "Focused effort creates lasting results."], direction: "End with a memorable thought about time's value." },
+  { topic: "Asking Questions", centralMessage: "Good questions open the door to better understanding.", supportingIdeas: ["Questions reveal curiosity.", "They challenge assumptions.", "They help people learn from one another."], direction: "Close with a final question or call to keep asking." },
+  { topic: "Embracing Change", centralMessage: "Change can be uncomfortable, but it often creates growth.", supportingIdeas: ["Change reveals adaptability.", "New circumstances create new possibilities.", "Resisting change can limit progress."], direction: "End with a hopeful view of transition." },
+  { topic: "Setting Goals", centralMessage: "Goals give effort direction and purpose.", supportingIdeas: ["Clear goals focus attention.", "Milestones make progress visible.", "Ambition becomes stronger with a plan."], direction: "Close by connecting goals to the future." },
+];
 
 const themeBank: ThemeBank[] = [
   ["Celebrities", "Taylor Swift, Beyoncé, Zendaya, MrBeast, LeBron James, Billie Eilish, Bad Bunny"],
@@ -311,13 +767,13 @@ const themeBank: ThemeBank[] = [
   ["Community", "Neighborhood, School, Team, Festival, Library, Volunteer, Park"],
   ["Service", "Volunteer, Coach, Nurse, Firefighter, Tutor, Donation, Neighbor"],
   ["Competition vs. Cooperation", "Relay, Group Project, Rival, Orchestra, Debate, Business, Team"],
-  ["Old vs. New", "Book, Smartphone, Vinyl, Electric Car, Tradition, Fashion, AI"],
+  ["Old vs. New", "Book, Smartphone, Vinyl, Electric Car, Tradition, Fashion, Robotics"],
   ["Real vs. Fake", "Deepfake, Knockoff, Smile, News, Diamond, Friend, Photograph"],
   ["Order vs. Chaos", "Desk, Traffic, Schedule, Storm, Classroom, Closet, City"],
   ["Head vs. Heart", "Career, Friendship, Purchase, Competition, Relationship, Risk, Dream"],
   ["Nature vs. Technology", "Forest, Robot, Farm, Smartphone, River, Drone, Garden"],
   ["Individual vs. Team", "Solo, Orchestra, Captain, Relay, Group Project, Star Player, Crew"],
-  ["Past vs. Future", "Yearbook, Time Machine, Tradition, AI, Childhood, Mars, Memory"],
+  ["Past vs. Future", "Yearbook, Time Machine, Tradition, Robotics, Childhood, Mars, Memory"],
   ["Quality vs. Quantity", "Friends, Food, Practice, Money, Followers, Books, Sleep"],
   ["Winning vs. Learning", "Trophy, Mistake, Rematch, Exam, Tournament, Practice, Failure"],
 ].map(([theme, topics]) => ({
@@ -329,7 +785,7 @@ const extempQuestions: ExtempQuestion[] = [
   ["USX · Government", "How should states respond to the growing use of artificial intelligence in election misinformation?"],
   ["USX · Government", "What role should the federal government play in administering U.S. elections?"],
   ["USX · Government", "How could disputes over voter verification affect confidence in the 2026 midterm elections?"],
-  ["USX · Government", "Should Congress establish national standards for the use of AI-generated political content?"],
+  ["USX · Government", "Should Congress establish national standards for the use of synthetic political content?"],
   ["USX · Government", "How should the United States balance election security with state control of elections?"],
   ["USX · Government", "What should Congress do to strengthen public confidence in election administration?"],
   ["USX · Government", "How significant will federal-state legal disputes be for American governance over the next several years?"],
@@ -347,12 +803,12 @@ const extempQuestions: ExtempQuestion[] = [
   ["USX · Economy", "How should policymakers respond to growing consumer concern about the cost of living?"],
   ["USX · Economy", "Will artificial intelligence meaningfully improve U.S. productivity growth?"],
   ["USX · Technology", "Does the United States need a comprehensive federal law regulating frontier artificial intelligence?"],
-  ["USX · Technology", "How should Congress balance AI innovation and AI safety?"],
-  ["USX · Technology", "Should advanced AI systems be subject to mandatory independent safety testing?"],
-  ["USX · Technology", "How should the United States regulate AI-generated deepfakes?"],
-  ["USX · Technology", "Should AI developers receive special antitrust exemptions for safety cooperation?"],
-  ["USX · Technology", "How should copyright law apply to the training of generative AI models?"],
-  ["USX · Technology", "What should the United States do to maintain its AI advantage over China?"],
+  ["USX · Technology", "How should Congress balance technology innovation and public safety?"],
+  ["USX · Technology", "Should advanced automated systems be subject to mandatory independent safety testing?"],
+  ["USX · Technology", "How should the United States regulate synthetic deepfakes?"],
+  ["USX · Technology", "Should technology developers receive special antitrust exemptions for safety cooperation?"],
+  ["USX · Technology", "How should copyright law apply to the training of generative technology models?"],
+  ["USX · Technology", "What should the United States do to maintain its advanced technology advantage over China?"],
   ["USX · Technology", "Should federal or state governments take the lead in regulating artificial intelligence?"],
   ["USX · Technology", "What regulatory framework should the United States adopt for cryptocurrency?"],
   ["USX · Technology", "How should schools prepare students for an economy increasingly shaped by artificial intelligence?"],
@@ -365,14 +821,14 @@ const extempQuestions: ExtempQuestion[] = [
   ["USX · Immigration", "What role should states have in shaping national immigration enforcement?"],
   ["USX · Immigration", "How should American universities respond to changing federal immigration policies?"],
   ["USX · Immigration", "What should be the federal government's role in higher education?"],
-  ["USX · Immigration", "How should American schools adapt their academic-integrity policies to generative AI?"],
+  ["USX · Immigration", "How should American schools adapt their academic-integrity policies to generative technology?"],
   ["USX · Energy", "What should the future U.S. electricity mix look like?"],
   ["USX · Energy", "Should the federal government establish nationwide limits on power-sector carbon emissions?"],
   ["USX · Energy", "How should the United States balance energy affordability and climate goals?"],
   ["USX · Energy", "What role should nuclear power play in U.S. energy policy?"],
   ["USX · Energy", "Should the United States accelerate domestic critical-mineral production?"],
   ["USX · Energy", "How should the United States regulate deep-sea mining?"],
-  ["USX · Energy", "Can the United States expand AI data centers without putting excessive pressure on electricity grids?"],
+  ["USX · Energy", "Can the United States expand data centers without putting excessive pressure on electricity grids?"],
   ["USX · Energy", "How should the United States strengthen its power grid against extreme weather and cyberattacks?"],
   ["USX · Energy", "What should federal policy do to encourage domestic solar manufacturing?"],
   ["USX · Energy", "How should policymakers address water scarcity in the American West?"],
@@ -407,9 +863,9 @@ const extempQuestions: ExtempQuestion[] = [
   ["IX · Middle East", "What would a durable regional security framework in the Middle East require?"],
   ["IX · Middle East", "How can humanitarian access be protected during continuing regional conflicts?"],
   ["IX · East Asia", "Can China rebalance its economy toward stronger domestic consumption?"],
-  ["IX · East Asia", "How sustainable is China's AI-driven industrial expansion?"],
+  ["IX · East Asia", "How sustainable is China's automation-driven industrial expansion?"],
   ["IX · East Asia", "How should China manage the risks posed by increasingly capable artificial intelligence?"],
-  ["IX · East Asia", "Can U.S.-China negotiations establish meaningful rules for frontier AI?"],
+  ["IX · East Asia", "Can U.S.-China negotiations establish meaningful rules for frontier technology?"],
   ["IX · East Asia", "What would improve relations between China and India?"],
   ["IX · East Asia", "How should China respond to slowing domestic investment?"],
   ["IX · East Asia", "What role will China play in shaping the future of BRICS?"],
@@ -444,7 +900,7 @@ const extempQuestions: ExtempQuestion[] = [
   ["IX · Global Institutions", "How should Europe manage migration while protecting asylum obligations?"],
   ["IX · Global Institutions", "Will overseas migrant return centers become a major part of European migration policy?"],
   ["IX · Global Institutions", "How should governments prepare workers for widespread adoption of artificial intelligence?"],
-  ["IX · Global Institutions", "Can international cooperation keep pace with the development of frontier AI?"],
+  ["IX · Global Institutions", "Can international cooperation keep pace with the development of frontier technology?"],
   ["IX · Global Institutions", "How should governments balance climate policy, energy security, and economic growth?"],
 ].map(([category, question]) => ({ category, question }));
 
@@ -527,6 +983,49 @@ function uniqueDraw<T>(items: T[], count: number, key: (item: T) => string = Str
   return picked;
 }
 
+async function extractPdfText(file: File) {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+  const data = new Uint8Array(await file.arrayBuffer());
+  const loadingTask = pdfjs.getDocument({ data });
+  const pdf = await loadingTask.promise;
+  const pages: string[] = [];
+  try {
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item) => {
+          if (typeof item === "object" && item && "str" in item && typeof item.str === "string") return item.str;
+          return "";
+        })
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (pageText) pages.push(pageText);
+    }
+  } finally {
+    await loadingTask.destroy();
+  }
+  return pages.join("\n\n").trim();
+}
+
+async function extractScriptText(file: File) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".rtf")) {
+    return file.text();
+  }
+  if (name.endsWith(".docx")) {
+    const mammoth = await import("mammoth/mammoth.browser");
+    const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return result.value.trim();
+  }
+  if (name.endsWith(".pdf")) {
+    return extractPdfText(file);
+  }
+  throw new Error("Please upload a PDF, DOCX, TXT, MD, or RTF file.");
+}
+
 function useAudio() {
   const contextRef = useRef<AudioContext | null>(null);
 
@@ -564,13 +1063,21 @@ function useAudio() {
     slotTick: () => {
       playTone(180 + Math.random() * 70, 0.035, "square", 0.018);
     },
-    ding: () => {
-      playTone(720, 0.11, "sine", 0.045);
-      window.setTimeout(() => playTone(960, 0.16, "triangle", 0.035), 70);
-    },
-    countdown: (final = false) => playTone(final ? 280 : 440, final ? 0.18 : 0.09, "sine", final ? 0.05 : 0.035),
-  };
-}
+	    ding: () => {
+	      playTone(720, 0.11, "sine", 0.045);
+	      window.setTimeout(() => playTone(960, 0.16, "triangle", 0.035), 70);
+	    },
+	    toggleOn: () => {
+	      playTone(540, 0.055, "triangle", 0.026);
+	      window.setTimeout(() => playTone(820, 0.09, "sine", 0.038), 42);
+	    },
+	    toggleOff: () => {
+	      playTone(520, 0.055, "sine", 0.018);
+	      window.setTimeout(() => playTone(320, 0.08, "triangle", 0.016), 46);
+	    },
+	    countdown: (final = false) => playTone(final ? 280 : 440, final ? 0.18 : 0.09, "sine", final ? 0.05 : 0.035),
+	  };
+	}
 
 function useCountdownTimer({
   seconds,
@@ -581,7 +1088,7 @@ function useCountdownTimer({
 }: {
   seconds: number;
   active: boolean;
-  onComplete: (elapsed: number) => void;
+  onComplete: (elapsed: number, completion: CompletionStatus) => void;
   onWarningSecond?: (second: number) => void;
   timerKey: string;
 }) {
@@ -590,28 +1097,34 @@ function useCountdownTimer({
   const frameRef = useRef<number | null>(null);
   const completedRef = useRef(false);
   const warningRef = useRef<Set<number>>(new Set());
+  const onCompleteRef = useRef(onComplete);
+  const onWarningSecondRef = useRef(onWarningSecond);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+    onWarningSecondRef.current = onWarningSecond;
+  });
 
   useEffect(() => {
     if (!active) return undefined;
     completedRef.current = false;
     warningRef.current = new Set();
     startRef.current = performance.now();
-    setRemaining(seconds);
 
     const tick = () => {
       const elapsed = (performance.now() - startRef.current) / 1000;
       const next = Math.max(0, seconds - elapsed);
       setRemaining(next);
       const rounded = Math.ceil(next);
-      if (onWarningSecond && rounded <= 5 && rounded >= 1 && !warningRef.current.has(rounded)) {
+      if (onWarningSecondRef.current && rounded <= 5 && rounded >= 1 && !warningRef.current.has(rounded)) {
         warningRef.current.add(rounded);
-        onWarningSecond(rounded);
+        onWarningSecondRef.current(rounded);
       }
       if (next <= 0) {
         if (!completedRef.current) {
           completedRef.current = true;
-          onWarningSecond?.(0);
-          onComplete(seconds);
+          onWarningSecondRef.current?.(0);
+          onCompleteRef.current(seconds, "expired");
         }
         return;
       }
@@ -622,14 +1135,14 @@ function useCountdownTimer({
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
     };
-  }, [active, seconds, onComplete, onWarningSecond, timerKey]);
+  }, [active, seconds, timerKey]);
 
   const finishNow = () => {
     if (completedRef.current) return;
     completedRef.current = true;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     const elapsed = Math.min(seconds, Math.max(0, (performance.now() - startRef.current) / 1000));
-    onComplete(elapsed);
+    onCompleteRef.current(elapsed, "manual");
   };
 
   return { remaining, finishNow, progress: seconds ? (seconds - remaining) / seconds : 1 };
@@ -642,14 +1155,16 @@ function TimerPanel({
   onComplete,
   onWarningSecond,
   topic,
+  topicLabel,
   timerKey,
 }: {
   label: string;
   seconds: number;
   buttonLabel?: string;
-  onComplete: (elapsed: number) => void;
+  onComplete: (elapsed: number, completion: CompletionStatus) => void;
   onWarningSecond?: (second: number) => void;
   topic?: string;
+  topicLabel?: string;
   timerKey: string;
 }) {
   const { remaining, finishNow, progress } = useCountdownTimer({
@@ -665,7 +1180,7 @@ function TimerPanel({
     <section className={`timer-stage ${urgent ? "urgent" : ""}`}>
       {topic ? (
         <div className="topic-banner">
-          <span>Your {topic.endsWith("?") ? "question" : "topic"}</span>
+          <span>{topicLabel || `Your ${topic.endsWith("?") ? "question" : "topic"}`}</span>
           <strong>{topic}</strong>
         </div>
       ) : null}
@@ -698,7 +1213,7 @@ function SelectionTimer({
   const { remaining, progress } = useCountdownTimer({
     seconds: 30,
     active: true,
-    onComplete,
+    onComplete: () => onComplete(),
     onWarningSecond,
     timerKey,
   });
@@ -724,7 +1239,7 @@ function DeliveryCountdown({
   const { remaining } = useCountdownTimer({
     seconds: 5,
     active: true,
-    onComplete: onDone,
+    onComplete: () => onDone(),
     onWarningSecond,
     timerKey: "delivery-countdown",
   });
@@ -736,6 +1251,169 @@ function DeliveryCountdown({
       <h1>It&apos;s time to deliver.</h1>
       <div className="countdown-number" data-count={count}>
         {count}
+      </div>
+    </section>
+  );
+}
+
+function GamePromptDisplay({ session, compact = false }: { session: SpeakingGameSession; compact?: boolean }) {
+  if (session.gameId === "hotSeat" && session.question) {
+    return (
+      <div className={`game-prompt-card ${compact ? "compact" : ""}`}>
+        <span>Question</span>
+        <strong>{session.question}</strong>
+      </div>
+    );
+  }
+
+  if (session.gameId === "wordFusion" && session.words?.length) {
+    return (
+      <div className={`game-word-grid ${compact ? "compact" : ""}`}>
+        {session.words.map((word) => (
+          <div className="game-word-card" key={word}>{word}</div>
+        ))}
+      </div>
+    );
+  }
+
+  if (session.gameId === "storyRelay" && session.openingLine) {
+    return (
+      <div className={`game-prompt-card ${compact ? "compact" : ""}`}>
+        <span>Opening Line</span>
+        <strong>{session.openingLine}</strong>
+      </div>
+    );
+  }
+
+  if (session.gameId === "landPlane" && session.outline) {
+    return <SpeechOutlineCard outline={session.outline} compact={compact} />;
+  }
+
+  return null;
+}
+
+function SpeechOutlineCard({ outline, compact = false }: { outline: SpeechOutline; compact?: boolean }) {
+  return (
+    <div className={`speech-outline-card ${compact ? "compact" : ""}`}>
+      <div>
+        <span>Topic</span>
+        <strong>{outline.topic}</strong>
+      </div>
+      <div>
+        <span>Central Message</span>
+        <p>{outline.centralMessage}</p>
+      </div>
+      <div>
+        <span>Supporting Ideas</span>
+        <ul>
+          {outline.supportingIdeas.map((idea) => (
+            <li key={idea}>{idea}</li>
+          ))}
+        </ul>
+      </div>
+      <p className="outline-direction">{outline.direction}</p>
+    </div>
+  );
+}
+
+function GamePrepCountdown({
+  config,
+  session,
+  onDone,
+  onWarningSecond,
+}: {
+  config: SpeakingGameConfig;
+  session: SpeakingGameSession;
+  onDone: () => void;
+  onWarningSecond: (second: number) => void;
+}) {
+  const { remaining } = useCountdownTimer({
+    seconds: 5,
+    active: true,
+    onComplete: () => onDone(),
+    onWarningSecond,
+    timerKey: `game-prep-${config.id}-${JSON.stringify(session)}`,
+  });
+  const count = Math.max(1, Math.ceil(remaining));
+
+  return (
+    <section className="game-countdown">
+      <p>{config.name}</p>
+      <h1>Get ready.</h1>
+      <GamePromptDisplay session={session} compact />
+      <div className="countdown-number" data-count={count}>
+        {count}
+      </div>
+    </section>
+  );
+}
+
+function SpeakingGameChallenge({
+  config,
+  session,
+  onComplete,
+  onWarningSecond,
+  onTwist,
+}: {
+  config: SpeakingGameConfig;
+  session: SpeakingGameSession;
+  onComplete: (elapsed: number, completion: CompletionStatus) => void;
+  onWarningSecond: (second: number) => void;
+  onTwist: () => void;
+}) {
+  const [activeTwistIndex, setActiveTwistIndex] = useState(-1);
+  const triggeredTwistsRef = useRef<Set<number>>(new Set());
+  const { remaining, finishNow, progress } = useCountdownTimer({
+    seconds: config.durationSeconds,
+    active: true,
+    onComplete,
+    onWarningSecond,
+    timerKey: `game-challenge-${config.id}-${JSON.stringify(session)}`,
+  });
+  const urgent = remaining <= 5 && remaining > 0;
+
+  useEffect(() => {
+    if (session.gameId !== "storyRelay") return;
+    const thresholds = [
+      { at: 120, index: 0 },
+      { at: 60, index: 1 },
+      { at: 30, index: 2 },
+    ];
+    const nextTwist = thresholds.find(({ at, index }) => remaining <= at && !triggeredTwistsRef.current.has(index));
+    if (!nextTwist) return;
+    triggeredTwistsRef.current.add(nextTwist.index);
+    setActiveTwistIndex(nextTwist.index);
+    onTwist();
+  }, [remaining, session.gameId, onTwist]);
+
+  const visibleTwist = session.twists && activeTwistIndex >= 0 ? session.twists[activeTwistIndex] : null;
+
+  return (
+    <section className={`timer-stage game-challenge ${urgent ? "urgent" : ""}`}>
+      <GamePromptDisplay session={session} compact />
+      {visibleTwist ? (
+        <div className="plot-twist-card" key={visibleTwist}>
+          <span>Plot Twist</span>
+          <strong>{visibleTwist}</strong>
+        </div>
+      ) : null}
+      {session.gameId === "storyRelay" && session.twists?.length ? (
+        <div className="twist-history">
+          {session.twists.slice(0, Math.max(0, activeTwistIndex + 1)).map((twist, index) => (
+            <span key={twist}>{index + 1}. {twist}</span>
+          ))}
+        </div>
+      ) : null}
+      <div className="timer-card">
+        <div className="timer-ring" style={{ "--progress": `${Math.min(1, Math.max(0, progress)) * 360}deg` } as React.CSSProperties}>
+          <div>
+            <span>{config.challengeLabel}</span>
+            <strong>{formatTime(remaining)}</strong>
+          </div>
+        </div>
+        <button className="secondary big-action" type="button" onClick={finishNow}>
+          I&apos;m done
+        </button>
       </div>
     </section>
   );
@@ -775,12 +1453,101 @@ function InstructionBlock({ children }: { children: React.ReactNode }) {
   return <div className="instruction-copy">{children}</div>;
 }
 
+function PracticeOptionToggle({
+  title,
+  description,
+  enabled,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <label className="analysis-toggle">
+      <span>
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <i aria-hidden="true" />
+    </label>
+  );
+}
+
+function PracticePrivacyOptions({
+  analysisEnabled,
+  saveRecordingEnabled,
+  onAnalysisChange,
+  onSaveRecordingChange,
+}: {
+  analysisEnabled: boolean;
+  saveRecordingEnabled: boolean;
+  onAnalysisChange: (enabled: boolean) => void;
+  onSaveRecordingChange: (enabled: boolean) => void;
+}) {
+  return (
+    <div className="practice-options">
+      <PracticeOptionToggle
+        title="Speech analysis"
+        description="Record audio during delivery and score the round afterward."
+        enabled={analysisEnabled}
+        onChange={onAnalysisChange}
+      />
+      <PracticeOptionToggle
+        title="Save recording"
+        description="Keep this round in your account so you can review it later."
+        enabled={saveRecordingEnabled}
+        onChange={onSaveRecordingChange}
+      />
+      <p className="privacy-note">
+        Your privacy matters. Saving recordings is optional and exists only so you can revisit your own practice.
+        Whether you save a recording or not, Speech Brigade does not listen to, reuse, or train on your audio or transcript.
+      </p>
+    </div>
+  );
+}
+
+function RecordingNotice() {
+  return (
+    <p className="recording-notice">
+      <span className="record-dot" />
+      Recording audio
+    </p>
+  );
+}
+
+function RecordingPrivacyFooter() {
+  return (
+    <p className="recording-privacy">
+      Your privacy matters to us. Speech Brigade does not listen to, reuse, or train on your audio or transcript.
+    </p>
+  );
+}
+
+function curveAnalysisStars(value: number) {
+  const originalStars = Math.max(1, Math.min(5, Math.round(value)));
+  return originalStars === 5 ? 5 : 2.5 + originalStars * 0.5;
+}
+
+function formatStarValue(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function StarRating({ value }: { value: number }) {
-  const stars = Math.max(0, Math.min(5, Math.round(value)));
+  const stars = curveAnalysisStars(value);
   return (
     <span className="star-rating" aria-label={`${stars} out of 5 stars`}>
       {Array.from({ length: 5 }, (_, index) => (
-        <i key={index} className={index < stars ? "filled" : ""}>
+        <i
+          key={index}
+          className={index + 1 <= stars ? "filled" : index < stars ? "half" : ""}
+        >
           ★
         </i>
       ))}
@@ -796,10 +1563,14 @@ const categoryLabels: Record<CategoryKey, string> = {
   sourceConsideration: "Source Consideration",
 };
 
-const CATEGORY_ORDER_BY_MODE: Record<EventMode, CategoryKey[]> = {
-  impromptu: ["organization", "analysis", "delivery"],
-  extemp: ["argumentationAnalysis", "sourceConsideration", "delivery"],
-};
+const STANDARD_CATEGORY_ORDER: CategoryKey[] = ["organization", "analysis", "delivery"];
+const LEGACY_EXTEMP_CATEGORY_ORDER: CategoryKey[] = ["argumentationAnalysis", "sourceConsideration", "delivery"];
+
+function getCategoryOrder(mode: AnalysisMode, categories: Partial<Record<CategoryKey, CategoryResult>>): CategoryKey[] {
+  const hasStandardCategories = STANDARD_CATEGORY_ORDER.some((key) => Boolean(categories[key]));
+  if (!hasStandardCategories && mode === "extemp") return LEGACY_EXTEMP_CATEGORY_ORDER;
+  return STANDARD_CATEGORY_ORDER;
+}
 
 const weakAxisLabels: Record<WeakAxis, string> = {
   organization: "Organization",
@@ -1364,7 +2135,7 @@ function ScorecardPanel({
   transcriptData: TranscriptData | null;
   audioUrl: string;
   theme: string;
-  mode: EventMode;
+  mode: AnalysisMode;
 }) {
   const [activeTab, setActiveTab] = useState<AnalysisTab>("scorecard");
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -1387,7 +2158,7 @@ function ScorecardPanel({
         <div className="verdict-score">
           <span>Score</span>
           <StarRating value={analysis.scorecard.stars} />
-          <strong>{analysis.scorecard.stars} / 5</strong>
+          <strong>{formatStarValue(curveAnalysisStars(analysis.scorecard.stars))} / 5</strong>
         </div>
         <div className="verdict-body">
           <h2>{analysis.scorecard.title}</h2>
@@ -1439,7 +2210,7 @@ function ScorecardPanel({
       <div className="tab-panel">
         {activeTab === "scorecard" ? (
           <>
-            <CategoryAccordion categories={analysis.categories} categoryKeys={CATEGORY_ORDER_BY_MODE[mode]} />
+            <CategoryAccordion categories={analysis.categories} categoryKeys={getCategoryOrder(mode, analysis.categories)} />
             <SectionedTranscript
               sentences={analysis.sentences}
               timestamps={sentenceTimestamps}
@@ -1556,6 +2327,13 @@ function formatVaultDuration(seconds: number | null) {
   return `${Math.round(seconds)}s`;
 }
 
+function formatAnalysisModeLabel(mode: AnalysisMode) {
+  if (mode === "impromptu") return "Impromptu Speaking";
+  if (mode === "extemp") return "Extemporaneous Speaking";
+  const eventConfig = PREPARED_EVENT_CONFIGS[mode];
+  return eventConfig ? `${eventConfig.name} (${eventConfig.acronym})` : "Practice round";
+}
+
 function VaultCard({
   recording,
   roundNumber,
@@ -1566,6 +2344,8 @@ function VaultCard({
   onOpen: (recording: VaultRecording) => void;
 }) {
   const hasAnalysis = Boolean(recording.analysis);
+  const hasAudio = Boolean(recording.audio_url);
+  const canOpen = hasAnalysis || hasAudio;
   const content = (
     <>
       <div className="vault-card-head">
@@ -1579,6 +2359,8 @@ function VaultCard({
           <span className="vault-analysis-pill">
             <SparkleIcon /> Analysis
           </span>
+        ) : hasAudio ? (
+          <span className="vault-analysis-pill recording-only">Recording</span>
         ) : (
           <span className="vault-analysis-pending">No analysis</span>
         )}
@@ -1586,7 +2368,7 @@ function VaultCard({
     </>
   );
 
-  if (!hasAnalysis) {
+  if (!canOpen) {
     return <div className="vault-card disabled">{content}</div>;
   }
 
@@ -1599,7 +2381,7 @@ function VaultCard({
 
 export default function SpeechBrigade() {
   const audio = useAudio();
-  const [screen, setScreen] = useState<Screen>("vaultAnalysis");
+  const [screen, setScreen] = useState<Screen>("landing");
   const [round, setRound] = useState<RoundState>(initialRound);
   const [allocationIndex, setAllocationIndex] = useState(2);
   const [themeDisplay, setThemeDisplay] = useState("READY");
@@ -1612,86 +2394,54 @@ export default function SpeechBrigade() {
   const [authEmail, setAuthEmail] = useState("");
   const [authStatus, setAuthStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [authError, setAuthError] = useState("");
+  const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(true);
+  const [saveRecordingEnabled, setSaveRecordingEnabled] = useState(
+    () => typeof window !== "undefined" && window.localStorage.getItem("speech-brigade-save-recording") === "true",
+  );
   const [analyzingStage, setAnalyzingStage] = useState<AnalyzingStage>("uploading");
   const [recordingError, setRecordingError] = useState("");
   const [vaultRecordings, setVaultRecordings] = useState<VaultRecording[]>([]);
   const [vaultLoading, setVaultLoading] = useState(false);
   const [vaultError, setVaultError] = useState("");
+  const [foundersOpen, setFoundersOpen] = useState(false);
+  const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
+  const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
+  const [selectedGameId, setSelectedGameId] = useState<SpeakingGameId | null>(null);
+  const [gameSession, setGameSession] = useState<SpeakingGameSession | null>(null);
+  const [gameRevealSpinning, setGameRevealSpinning] = useState(false);
+  const [infoModal, setInfoModal] = useState<InfoModalContent | null>(null);
   const [activeVaultAnalysis, setActiveVaultAnalysis] = useState<{
-    analysis: AnalysisResult;
+    analysis: AnalysisResult | null;
     transcript: string;
     transcriptData: TranscriptData | null;
     audioUrl: string;
-    mode: EventMode;
-  } | null>({
-    mode: "impromptu",
-    analysis: {
-      topic: "Laughter",
-      scorecard: { stars: 2, title: "Needs real polish", description: "Test." },
-      sentences: [
-        { tip: null, text: "Laughter is the best medicine.", example: null, section: "opening", weakAxis: null, errorSpan: null, grammarSubcategory: null },
-        { tip: "t", text: "Laughter.", example: "e", section: "opening", weakAxis: "delivery", errorSpan: null, grammarSubcategory: null },
-        { tip: "t", text: "Laughter.", example: "e", section: "opening", weakAxis: "delivery", errorSpan: null, grammarSubcategory: null },
-        { tip: "t", text: "Laughter.", example: "e", section: "opening", weakAxis: "delivery", errorSpan: null, grammarSubcategory: null },
-        { tip: "t", text: "Laughter is the best medicine because laughter is oftentimes to be said what is the most necessary for people when they are in pain either mentally or physically.", example: "e", section: "body", weakAxis: "grammar", errorSpan: "is oftentimes to be said what is the most necessary", grammarSubcategory: ["wordUsage"] },
-        { tip: "t", text: "It's very important to have laughter so that you are able to see the light of the situation.", example: "e", section: "body", weakAxis: "vocab", errorSpan: null, grammarSubcategory: null },
-        { tip: "t", text: "People who are humorous usually live longer.", example: "e", section: "body", weakAxis: "analysis", errorSpan: null, grammarSubcategory: null },
-        { tip: null, text: "If you're able to laugh at your own situation, then that means you're not taking yourself too seriously.", example: null, section: "body", weakAxis: null, errorSpan: null, grammarSubcategory: null },
-        { tip: "t", text: "You see that there it's not the end of the world if something bad happened to you.", example: "e", section: "closing", weakAxis: "grammar", errorSpan: "that there it's not the end of the world if something bad happened", grammarSubcategory: ["verbTense"] },
-      ],
-      weakWords: [],
-      categories: {
-        analysis: { stars: 1, takeaway: "t" },
-        delivery: { stars: 2, takeaway: "t" },
-        organization: { stars: 2, takeaway: "t" },
-      },
-      pauseCount: 8,
-      powerWords: [],
-      fillerCount: 0,
-      sectionTips: {
-        body: { body: "b", title: "t", example: "e" },
-        closing: { body: "b", title: "t", example: "e" },
-        opening: { body: "b", title: "t", example: "e" },
-      },
-      vocabSummary: "v",
-      yourStructure: { body: 75, closing: 17, opening: 8 },
-      grammarSummary: "g",
-      idealStructure: { body: 70, closing: 15, opening: 15 },
-      keyTakeawayTip: "k",
-      wordsPerMinute: 107,
-      grammarBreakdown: { agreement: 0, verbTense: 1, wordUsage: 1, sentenceStructure: 2 },
-    },
-    transcript:
-      "Laughter is the best medicine. Laughter. Laughter. Laughter. Laughter is the best medicine because laughter is oftentimes to be said what is the most necessary for people when they are in pain either mentally or physically. It's very important to have laughter so that you are able to see the light of the situation. People who are humorous usually live longer. If you're able to laugh at your own situation, then that means you're not taking yourself too seriously. You see that there it's not the end of the world if something bad happened to you.",
-    transcriptData: {
-      paragraphs: [
-        {
-          sentences: [
-            { end: 5.44, text: "Laughter is the best medicine.", start: 2.3999999 },
-            { end: 7.12, text: "Laughter.", start: 6.56 },
-            { end: 7.52, text: "Laughter.", start: 7.12 },
-            { end: 8.16, text: "Laughter.", start: 7.52 },
-            { end: 28.064999, text: "Laughter is the best medicine because laughter is oftentimes to be said what is the most necessary for people when they are in pain either mentally or physically.", start: 8.559999 },
-          ],
-        },
-        {
-          sentences: [
-            { end: 36.91, text: "It's very important to have laughter so that you are able to see the light of the situation.", start: 28.99 },
-            { end: 41.39, text: "People who are humorous usually live longer.", start: 38.75 },
-            { end: 48.545, text: "If you're able to laugh at your own situation, then that means you're not taking yourself too seriously.", start: 42.704998 },
-            { end: 53.425, text: "You see that there it's not the end of the world if something bad happened to you.", start: 49.664997 },
-          ],
-        },
-      ],
-    },
-    audioUrl: "",
-  });
+    mode: AnalysisMode;
+    prompt: string;
+    durationSeconds: number | null;
+  } | null>(null);
+  const [preparedScript, setPreparedScript] = useState<PreparedScriptContext | null>(null);
+  const [scriptUploadStatus, setScriptUploadStatus] = useState("");
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const saveRecordingPreferenceLoadedRef = useRef(false);
+  const scriptInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    const readyId = window.setTimeout(() => {
+      saveRecordingPreferenceLoadedRef.current = true;
+    }, 0);
+    return () => window.clearTimeout(readyId);
+  }, []);
+
+  useEffect(() => {
+    if (!saveRecordingPreferenceLoadedRef.current) return;
+    window.localStorage.setItem("speech-brigade-save-recording", String(saveRecordingEnabled));
+  }, [saveRecordingEnabled]);
+
+  useEffect(() => {
+    if (!supabase) return undefined;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
@@ -1701,25 +2451,24 @@ export default function SpeechBrigade() {
 
   useEffect(() => {
     if (screen === "eventsAuth" && session) {
-      setScreen("events");
+      const id = window.setTimeout(() => setScreen("events"), 0);
+      return () => window.clearTimeout(id);
     }
     if (screen === "signIn" && session) {
-      setScreen("settings");
+      const id = window.setTimeout(() => setScreen("settings"), 0);
+      return () => window.clearTimeout(id);
     }
+    return undefined;
   }, [screen, session]);
 
   useEffect(() => {
-    if (screen === "impromptuDelivery" || screen === "extempDelivery") {
-      void startRecording();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen]);
-
-  useEffect(() => {
-    if (screen !== "settings" || !session) return undefined;
+    if (screen !== "pastSpeeches" || !session || !supabase) return undefined;
     let cancelled = false;
-    setVaultLoading(true);
-    setVaultError("");
+    const loadingId = window.setTimeout(() => {
+      if (cancelled) return;
+      setVaultLoading(true);
+      setVaultError("");
+    }, 0);
     supabase
       .from("recordings")
       .select("id, prompt, mode, duration_seconds, transcript, transcript_data, audio_url, analysis, created_at")
@@ -1736,23 +2485,76 @@ export default function SpeechBrigade() {
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(loadingId);
     };
   }, [screen, session]);
 
+  useEffect(() => {
+    if (!foundersOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFoundersOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [foundersOpen]);
+
+  useEffect(() => {
+    if (!infoModal) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setInfoModal(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [infoModal]);
+
   const openVaultAnalysis = (recording: VaultRecording) => {
-    if (!recording.analysis) return;
+    if (!recording.analysis && !recording.audio_url) return;
     setActiveVaultAnalysis({
-      analysis: recording.analysis,
+      analysis: recording.analysis || null,
       transcript: recording.transcript || "",
       transcriptData: recording.transcript_data || null,
       audioUrl: recording.audio_url || "",
       mode: recording.mode,
+      prompt: recording.prompt,
+      durationSeconds: recording.duration_seconds,
     });
     setScreen("vaultAnalysis");
   };
 
-  const modeLabel = round.mode === "impromptu" ? "Impromptu Speaking" : round.mode === "extemp" ? "Extemporaneous Speaking" : "";
-  const isDarkPhase = ["topicSelect", "impromptuPrep", "deliveryCountdown", "impromptuDelivery", "analyzing", "questionSelect", "extempPrep", "extempDelivery", "results", "vaultAnalysis"].includes(screen);
+  const selectedPreparedEvent = selectedPreparedEventId ? PREPARED_EVENT_CONFIGS[selectedPreparedEventId] : null;
+  const selectedGame = selectedGameId ? SPEAKING_GAME_CONFIGS[selectedGameId] : null;
+  const modeLabel =
+    round.mode === "impromptu"
+      ? "Impromptu Speaking"
+      : round.mode === "extemp"
+        ? "Extemporaneous Speaking"
+        : selectedPreparedEvent
+          ? `${selectedPreparedEvent.name} (${selectedPreparedEvent.acronym})`
+          : selectedGame
+            ? selectedGame.name
+          : "";
+  const isDarkPhase = [
+    "topicSelect",
+    "impromptuPrep",
+    "deliveryCountdown",
+    "impromptuDelivery",
+    "analyzing",
+    "questionSelect",
+    "extempPrep",
+    "extempDelivery",
+    "results",
+    "vaultAnalysis",
+    "preparedDeliveryCountdown",
+    "preparedPerformance",
+    "preparedResults",
+    "gamePrepCountdown",
+    "gameChallenge",
+    "gameResults",
+  ].includes(screen);
+
+  const closeInfoModal = () => {
+    setInfoModal(null);
+  };
 
   const setAllocatedTime = (index: number) => {
     const picked = allocationOptions[index];
@@ -1767,10 +2569,18 @@ export default function SpeechBrigade() {
   const goHome = () => {
     setScreen("landing");
     setRound(initialRound);
+    setSelectedPreparedEventId(null);
+    setPreparedResult(null);
+    setPreparedScript(null);
+    setScriptUploadStatus("");
+    setSelectedGameId(null);
+    setGameSession(null);
+    setGameRevealSpinning(false);
     setThemeDisplay("READY");
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setActiveSlot(null);
     setLockedChoice("");
+    setSpeechAnalysisEnabled(true);
     setRecordingError("");
   };
 
@@ -1781,12 +2591,107 @@ export default function SpeechBrigade() {
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setActiveSlot(null);
     setLockedChoice("");
+    setSpeechAnalysisEnabled(true);
     setRecordingError("");
     setScreen(mode === "impromptu" ? "impromptuIntro" : "extempIntro");
   };
 
+  const startPreparedEvent = (eventId: PreparedEventId) => {
+    audio.unlock();
+    setSelectedPreparedEventId(eventId);
+    setPreparedResult(null);
+    setPreparedScript(null);
+    setScriptUploadStatus("");
+    setRound(initialRound);
+    setRecordingError("");
+    setScreen("preparedEventIntro");
+  };
+
+  const startSpeakingGame = (gameId: SpeakingGameId) => {
+    audio.unlock();
+    setSelectedGameId(gameId);
+    setGameSession({ gameId });
+    setGameRevealSpinning(false);
+    setScreen("gameInstructions");
+  };
+
+  const gameConfig = selectedGameId ? SPEAKING_GAME_CONFIGS[selectedGameId] : null;
+
+  const chooseDifferent = <T,>(items: T[], previous: T | undefined, key: (item: T) => string = String) => {
+    const options = previous ? items.filter((item) => key(item) !== key(previous)) : items;
+    return randomItem(options.length ? options : items);
+  };
+
+  const prepareHotSeatQuestion = () => {
+    const previous = gameSession?.question;
+    const question = chooseDifferent(hotSeatQuestions, previous);
+    setGameSession({ gameId: "hotSeat", question });
+    setGameRevealSpinning(false);
+    audio.ding();
+    window.setTimeout(() => setScreen("gamePrepCountdown"), 700);
+  };
+
+  const prepareWordFusionWords = (words: string[]) => {
+    setGameSession({ gameId: "wordFusion", words });
+    setGameRevealSpinning(false);
+    window.setTimeout(() => setScreen("gamePrepCountdown"), 900);
+  };
+
+  const prepareStoryRelay = () => {
+    const previous = gameSession?.openingLine;
+    const openingLine = chooseDifferent(storyOpenings, previous);
+    const twists = uniqueDraw(storyTwists, 3);
+    setGameSession({ gameId: "storyRelay", openingLine, twists, activeTwistIndex: -1 });
+    audio.ding();
+    window.setTimeout(() => setScreen("gamePrepCountdown"), 700);
+  };
+
+  const prepareLandPlane = () => {
+    const previous = gameSession?.outline;
+    const outline = chooseDifferent(landPlaneOutlines, previous, (item) => item.topic);
+    setGameSession({ gameId: "landPlane", outline });
+    audio.ding();
+  };
+
+  const completeSpeakingGame = (elapsed: number, completion: CompletionStatus) => {
+    if (!gameSession) return;
+    setGameSession({
+      ...gameSession,
+      elapsedSeconds: Math.round(elapsed),
+      completion,
+    });
+    setScreen("gameResults");
+  };
+
+  const retrySpeakingGame = () => {
+    if (!gameSession) return;
+    const retryGameId = gameSession.gameId;
+    setSelectedGameId(retryGameId);
+    setGameRevealSpinning(false);
+    if (retryGameId === "hotSeat") {
+      setGameSession({ gameId: retryGameId });
+      setScreen("hotSeatReveal");
+    } else if (retryGameId === "wordFusion") {
+      setGameSession({ gameId: retryGameId });
+      setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
+      setActiveSlot(null);
+      setScreen("wordFusionSpin");
+    } else if (retryGameId === "storyRelay") {
+      setGameSession({ gameId: retryGameId });
+      setScreen("storyRelaySetup");
+    } else {
+      setGameSession({ gameId: retryGameId });
+      setScreen("landPlaneSetup");
+    }
+  };
+
   const sendMagicLink = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!supabase) {
+      setAuthStatus("error");
+      setAuthError("Supabase is not configured for this local preview.");
+      return;
+    }
     if (!authEmail.trim()) return;
     setAuthStatus("sending");
     setAuthError("");
@@ -1806,8 +2711,12 @@ export default function SpeechBrigade() {
 
   const RECORDING_MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 
-  const startRecording = async () => {
-    setRecordingError("");
+	  const startRecording = async () => {
+	    setRecordingError("");
+	    if (!isSupabaseConfigured) {
+	      setRecordingError("Recording features need Supabase settings. You can still complete the practice round locally.");
+	      return;
+	    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = RECORDING_MIME_CANDIDATES.find((type) => MediaRecorder.isTypeSupported(type));
@@ -1823,8 +2732,61 @@ export default function SpeechBrigade() {
       setRecordingError(
         err instanceof Error ? err.message : "Microphone access was denied. Analysis will be skipped for this round.",
       );
+	    }
+	  };
+
+  useEffect(() => {
+    if (
+      (speechAnalysisEnabled || saveRecordingEnabled) &&
+      (screen === "impromptuDelivery" || screen === "extempDelivery" || screen === "preparedPerformance")
+    ) {
+      const id = window.setTimeout(() => {
+        void startRecording();
+      }, 0);
+      return () => window.clearTimeout(id);
     }
-  };
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, speechAnalysisEnabled, saveRecordingEnabled]);
+
+	  const getRecordingSession = async () => {
+	    if (!supabase || !supabaseUrl) {
+	      throw new Error("Recording features need Supabase settings. You can still use timers and prompts locally.");
+	    }
+	    const {
+	      data: { session: activeSession },
+	    } = await supabase.auth.getSession();
+	    if (!activeSession) throw new Error("You need to be signed in to record this round.");
+	    return {
+	      token: activeSession.access_token,
+	      userId: activeSession.user.id,
+	    };
+	  };
+
+	  const uploadRecordingBlob = async (blob: Blob, userId: string) => {
+	    if (!supabase) throw new Error("Recording features need Supabase settings.");
+	    const extension = blob.type.includes("mp4") ? "m4a" : "webm";
+	    const path = `${userId}/${Date.now()}.${extension}`;
+	    const { error: uploadError } = await supabase.storage
+	      .from("impromptu-recordings")
+	      .upload(path, blob, { contentType: blob.type || "audio/webm" });
+	    if (uploadError) throw uploadError;
+	    const { data: publicUrlData } = supabase.storage.from("impromptu-recordings").getPublicUrl(path);
+	    return { extension, path, audioUrl: publicUrlData.publicUrl };
+	  };
+
+	  const removeTemporaryRecording = async (recordingId: string | null, path: string | null) => {
+	    if (!supabase) return;
+	    const cleanupTasks: Array<Promise<unknown>> = [];
+	    if (recordingId) cleanupTasks.push(Promise.resolve(supabase.from("recordings").delete().eq("id", recordingId)));
+	    if (path) cleanupTasks.push(supabase.storage.from("impromptu-recordings").remove([path]));
+	    const results = await Promise.allSettled(cleanupTasks);
+	    results.forEach((result) => {
+	      if (result.status === "rejected") {
+	        console.warn("Unable to remove temporary recording", result.reason);
+	      }
+	    });
+	  };
 
   const stopRecording = (): Promise<Blob | null> => {
     return new Promise((resolve) => {
@@ -1846,26 +2808,67 @@ export default function SpeechBrigade() {
     });
   };
 
-  const runAnalysisPipeline = async (blob: Blob, mode: EventMode, topic: string, durationSeconds: number) => {
-    try {
-      const {
-        data: { session: activeSession },
-      } = await supabase.auth.getSession();
-      if (!activeSession) throw new Error("You need to be signed in to analyze a recording.");
-      const token = activeSession.access_token;
-      const userId = activeSession.user.id;
+	  const saveRecordingOnly = async (
+	    blob: Blob,
+	    mode: AnalysisMode,
+	    topic: string,
+	    durationSeconds: number,
+	    options?: { resultScreen?: Screen; onError?: (message: string) => void },
+	  ) => {
+	    try {
+	      if (!supabase) throw new Error("Recording features need Supabase settings.");
+	      const { userId } = await getRecordingSession();
+	      const { audioUrl } = await uploadRecordingBlob(blob, userId);
 
-      setAnalyzingStage("uploading");
-      const extension = blob.type.includes("mp4") ? "m4a" : "webm";
-      const path = `${userId}/${Date.now()}.${extension}`;
-      const { error: uploadError } = await supabase.storage
-        .from("impromptu-recordings")
-        .upload(path, blob, { contentType: blob.type || "audio/webm" });
-      if (uploadError) throw uploadError;
-      const { data: publicUrlData } = supabase.storage.from("impromptu-recordings").getPublicUrl(path);
-      const audioUrl = publicUrlData.publicUrl;
+	      const { error: insertError } = await supabase
+	        .from("recordings")
+	        .insert({
+	          user_id: userId,
+	          mode,
+	          prompt: topic,
+	          transcript: "",
+	          transcript_data: null,
+	          duration_seconds: durationSeconds,
+	          audio_url: audioUrl,
+	        });
+	      if (insertError) throw insertError;
 
-      setAnalyzingStage("transcribing");
+	      setRound((current) => ({ ...current, analysisError: null }));
+	    } catch (err) {
+	      const message = err instanceof Error ? err.message : "Recording could not be saved. Please try again.";
+	      options?.onError?.(message);
+	      setRound((current) => ({ ...current, analysisError: message }));
+	    } finally {
+	      setScreen(options?.resultScreen || "results");
+	    }
+	  };
+
+	  const runAnalysisPipeline = async (
+	    blob: Blob,
+	    mode: AnalysisMode,
+	    topic: string,
+	    durationSeconds: number,
+	    saveRecording: boolean,
+	    options?: {
+	      scriptContext?: PreparedScriptContext | null;
+	      resultScreen?: Screen;
+	      onComplete?: (result: CompletedAnalysis) => void;
+	      onError?: (message: string) => void;
+	    },
+	  ) => {
+	    let temporaryRecordingId: string | null = null;
+	    let temporaryPath: string | null = null;
+	    try {
+	      if (!supabase || !supabaseUrl) {
+	        throw new Error("Speech analysis needs Supabase settings. You can still use timers and prompts locally.");
+	      }
+	      const { token, userId } = await getRecordingSession();
+
+	      setAnalyzingStage("uploading");
+	      const { extension, path, audioUrl } = await uploadRecordingBlob(blob, userId);
+	      temporaryPath = saveRecording ? null : path;
+
+	      setAnalyzingStage("transcribing");
       const form = new FormData();
       form.append("audio", blob, `recording.${extension}`);
       const transcribeRes = await fetch(`${supabaseUrl}/functions/v1/transcribe`, {
@@ -1888,36 +2891,63 @@ export default function SpeechBrigade() {
           duration_seconds: durationSeconds,
           audio_url: audioUrl,
         })
-        .select("id")
-        .single();
-      if (insertError) throw insertError;
+	        .select("id")
+	        .single();
+	      if (insertError) throw insertError;
+	      temporaryRecordingId = saveRecording ? null : recordingRow.id;
 
-      setAnalyzingStage("analyzing");
+	      setAnalyzingStage("analyzing");
       const analyzeRes = await fetch(`${supabaseUrl}/functions/v1/analyze-speech`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ recordingId: recordingRow.id }),
+        body: JSON.stringify({
+          recordingId: recordingRow.id,
+          eventMode: mode,
+          scriptContext: options?.scriptContext?.status === "ready"
+            ? {
+                fileName: options.scriptContext.fileName,
+                text: options.scriptContext.text,
+              }
+            : null,
+        }),
       });
       const analyzeBody = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeBody.error || "Analysis failed");
 
-      setRound((current) => ({
-        ...current,
-        analysis: analyzeBody.analysis,
-        analysisTranscript: transcript,
-        analysisTranscriptData: transcriptData || null,
-        analysisAudioUrl: audioUrl,
-        analysisError: null,
-      }));
-    } catch (err) {
-      setRound((current) => ({
-        ...current,
-        analysisError: err instanceof Error ? err.message : "Analysis failed. Please try again.",
-      }));
-    } finally {
-      setScreen("results");
-    }
-  };
+	      const completedAnalysis: CompletedAnalysis = {
+	        analysis: analyzeBody.analysis,
+	        transcript,
+	        transcriptData: transcriptData || null,
+	        audioUrl: saveRecording ? audioUrl : "",
+	      };
+	      if (options?.onComplete) {
+	        options.onComplete(completedAnalysis);
+	      } else {
+	        setRound((current) => ({
+	          ...current,
+	          analysis: completedAnalysis.analysis,
+	          analysisTranscript: completedAnalysis.transcript,
+	          analysisTranscriptData: completedAnalysis.transcriptData,
+	          analysisAudioUrl: completedAnalysis.audioUrl,
+	          analysisError: null,
+	        }));
+	      }
+	      if (!saveRecording) {
+	        await removeTemporaryRecording(temporaryRecordingId, temporaryPath);
+	        temporaryRecordingId = null;
+	        temporaryPath = null;
+	      }
+	    } catch (err) {
+	      const message = err instanceof Error ? err.message : "Analysis failed. Please try again.";
+	      options?.onError?.(message);
+	      setRound((current) => ({ ...current, analysisError: message }));
+	    } finally {
+	      if (!saveRecording) {
+	        await removeTemporaryRecording(temporaryRecordingId, temporaryPath);
+	      }
+	      setScreen(options?.resultScreen || "results");
+	    }
+	  };
 
   const practiceAgain = () => {
     if (round.mode === "impromptu") {
@@ -1935,6 +2965,12 @@ export default function SpeechBrigade() {
       setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
       setScreen("questionSpin");
     }
+  };
+
+  const practicePreparedAgain = () => {
+    if (!selectedPreparedEventId) return;
+    setPreparedResult(null);
+    setScreen("speechWorkspace");
   };
 
   const spinTheme = () => {
@@ -2003,6 +3039,32 @@ export default function SpeechBrigade() {
     );
   };
 
+  const spinWordFusion = () => {
+    if (activeSlot !== null || gameRevealSpinning) return;
+    audio.unlock();
+    setGameRevealSpinning(true);
+    const words = uniqueDraw(wordFusionBank, 3);
+    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
+    const tickIntervals: number[] = [];
+
+    words.forEach((word, index) => {
+      window.setTimeout(() => {
+        setActiveSlot(index);
+        audio.slotTick();
+        tickIntervals[index] = window.setInterval(() => audio.slotTick(), 92);
+      }, index * 1450);
+      window.setTimeout(() => {
+        if (tickIntervals[index]) window.clearInterval(tickIntervals[index]);
+        setSlotItems((current) => current.map((slot, slotIndex) => (slotIndex === index ? { value: word } : slot)));
+        setActiveSlot(null);
+        audio.ding();
+        if (index === words.length - 1) {
+          prepareWordFusionWords(words);
+        }
+      }, index * 1450 + 1180);
+    });
+  };
+
   const chooseTopic = (topic: string) => {
     setLockedChoice(topic);
     window.setTimeout(() => {
@@ -2019,32 +3081,147 @@ export default function SpeechBrigade() {
     }, 280);
   };
 
+  const handleScriptFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setScriptUploadStatus("Reading script…");
+    setPreparedScript(null);
+    try {
+      const text = (await extractScriptText(file)).replace(/\s+/g, " ").trim();
+      if (!text) {
+        setPreparedScript({
+          fileName: file.name,
+          text: "",
+          status: "empty",
+          message: "Script attached, but no readable text was found. You can still continue without script context.",
+        });
+        setScriptUploadStatus("");
+        return;
+      }
+      setPreparedScript({
+        fileName: file.name,
+        text: text.slice(0, 28000),
+        status: "ready",
+        message: "Script attached. Feedback will use it as performance context, not as a writing grade.",
+      });
+      setScriptUploadStatus("");
+    } catch (err) {
+      setPreparedScript({
+        fileName: file.name,
+        text: "",
+        status: "error",
+        message: err instanceof Error ? err.message : "That script could not be read. You can still continue without it.",
+      });
+      setScriptUploadStatus("");
+    }
+  };
+
   const handlePrepComplete = (elapsed: number) => {
     setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
     setScreen("deliveryCountdown");
   };
 
-  const handleDeliveryComplete = (elapsed: number) => {
-    const roundedElapsed = Math.round(elapsed);
-    setRound((current) => ({ ...current, deliverySecondsUsed: roundedElapsed }));
-    const mode = round.mode;
+	  const handleDeliveryComplete = (elapsed: number) => {
+	    const roundedElapsed = Math.round(elapsed);
+	    setRound((current) => ({ ...current, deliverySecondsUsed: roundedElapsed }));
+	    const mode = round.mode;
     if (!mode) {
       setScreen("results");
+	      return;
+	    }
+	    const topic = mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
+	    if (!speechAnalysisEnabled && !saveRecordingEnabled) {
+	      setScreen("results");
+	      return;
+	    }
+	    stopRecording().then((blob) => {
+	      if (!blob) {
+	        setRound((current) => ({
+	          ...current,
+	          analysisError:
+	            recordingError ||
+	            (speechAnalysisEnabled
+	              ? "No recording was captured, so analysis is unavailable."
+	              : "No recording was captured, so it could not be saved."),
+	        }));
+        setScreen("results");
+	        return;
+	      }
+	      setAnalyzingStage("uploading");
+	      setScreen("analyzing");
+	      if (speechAnalysisEnabled) {
+	        void runAnalysisPipeline(blob, mode, topic, roundedElapsed, saveRecordingEnabled);
+	      } else {
+	        void saveRecordingOnly(blob, mode, topic, roundedElapsed);
+	      }
+	    });
+	  };
+
+  const handlePreparedPerformanceComplete = (elapsed: number, completion: CompletionStatus) => {
+    if (!selectedPreparedEventId) return;
+    const roundedElapsed = Math.round(elapsed);
+    const baseResult: PreparedPerformanceResult = {
+      eventId: selectedPreparedEventId,
+      elapsedSeconds: roundedElapsed,
+      completion,
+      analysis: null,
+      analysisTranscript: "",
+      analysisTranscriptData: null,
+      analysisAudioUrl: "",
+      analysisError: null,
+    };
+
+    if (!speechAnalysisEnabled && !saveRecordingEnabled) {
+      setPreparedResult(baseResult);
+      setScreen("preparedResults");
       return;
     }
-    const topic = mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
+
     stopRecording().then((blob) => {
       if (!blob) {
-        setRound((current) => ({
-          ...current,
-          analysisError: recordingError || "No recording was captured, so analysis is unavailable.",
-        }));
-        setScreen("results");
+        setPreparedResult({
+          ...baseResult,
+          analysisError:
+            recordingError ||
+            (speechAnalysisEnabled
+              ? "No recording was captured, so analysis is unavailable."
+              : "No recording was captured, so it could not be saved."),
+        });
+        setScreen("preparedResults");
         return;
       }
+      const eventConfig = PREPARED_EVENT_CONFIGS[selectedPreparedEventId];
+      const topic = `${eventConfig.name} (${eventConfig.acronym})`;
       setAnalyzingStage("uploading");
       setScreen("analyzing");
-      void runAnalysisPipeline(blob, mode, topic, roundedElapsed);
+      if (speechAnalysisEnabled) {
+        void runAnalysisPipeline(blob, selectedPreparedEventId, topic, roundedElapsed, saveRecordingEnabled, {
+          scriptContext: preparedScript,
+          resultScreen: "preparedResults",
+          onComplete: (analysisResult) => {
+            setPreparedResult({
+              ...baseResult,
+              analysis: analysisResult.analysis,
+              analysisTranscript: analysisResult.transcript,
+              analysisTranscriptData: analysisResult.transcriptData,
+              analysisAudioUrl: analysisResult.audioUrl,
+              analysisError: null,
+            });
+          },
+          onError: (message) => {
+            setPreparedResult({ ...baseResult, analysisError: message });
+          },
+        });
+      } else {
+        void saveRecordingOnly(blob, selectedPreparedEventId, topic, roundedElapsed, {
+          resultScreen: "preparedResults",
+          onError: (message) => {
+            setPreparedResult({ ...baseResult, analysisError: message });
+          },
+        });
+        setPreparedResult(baseResult);
+      }
     });
   };
 
@@ -2054,10 +3231,11 @@ export default function SpeechBrigade() {
   const playInteractionSound = (event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement | null;
     if (!target?.closest("button:not(:disabled), a[href]")) return;
+    if (target.closest("[data-no-press-sound='true']")) return;
     audio.press();
   };
 
-  const content = useMemo(() => {
+  const content = (() => {
     switch (screen) {
       case "landing":
         return (
@@ -2066,48 +3244,509 @@ export default function SpeechBrigade() {
             <h1>Speech Brigade</h1>
             <p className="lede">Practice under pressure.</p>
             <div className="hero-actions">
-              <button className="ghost-card" type="button" aria-disabled="true" onClick={audio.unlock}>
-                <span>Table Topic Mode</span>
-                <small>Coming soon</small>
+              <button
+                className="ghost-card"
+                type="button"
+                disabled
+                aria-disabled="true"
+              >
+                <i className="coming-soon-badge">Coming Soon</i>
+                <span>Speaking Games</span>
+                <small>Small challenges. Stronger speakers. Launching soon.</small>
               </button>
               <button
                 className="primary-card"
                 type="button"
-                onClick={() => setScreen(session ? "events" : "eventsAuth")}
+                onClick={() => setScreen(session || !isSupabaseConfigured ? "events" : "eventsAuth")}
               >
-                <span>National Speech & Debate Association Mode</span>
-                <small>Impromptu and Extemp rounds</small>
+                <span>National Speech & Debate Association</span>
+                <small>Speaking event practice</small>
               </button>
+            </div>
+          </section>
+        );
+      case "gamesSelection":
+        return (
+          <section className="narrow">
+            <p className="eyebrow">Speaking Games</p>
+            <h1>Speaking Games</h1>
+            <p className="lede">Small challenges. Stronger speakers.</p>
+            <div className="game-grid">
+              {SPEAKING_GAME_IDS.map((gameId) => {
+                const game = SPEAKING_GAME_CONFIGS[gameId];
+                return (
+                  <button className="game-card" type="button" key={gameId} onClick={() => startSpeakingGame(gameId)}>
+                    <i aria-hidden="true">{game.icon}</i>
+                    <span>{game.name}</span>
+                    <strong>{game.tagline}</strong>
+                    <small>{game.description}</small>
+                    <em>{game.durationLabel}</em>
+                  </button>
+                );
+              })}
+            </div>
+            <button className="secondary" type="button" onClick={goHome}>
+              Back
+            </button>
+          </section>
+        );
+      case "gameInstructions":
+        if (!gameConfig) {
+          return (
+            <section className="reading">
+              <h1>Select a game to continue</h1>
+              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
+            </section>
+          );
+        }
+        return (
+          <section className="reading">
+            <p className="eyebrow">Speaking Games</p>
+            <h1>{gameConfig.welcomeTitle}</h1>
+            <InstructionBlock>
+              {gameConfig.instructionParagraphs.map((paragraph, index) => (
+                <p key={`${gameConfig.id}-${index}`}>{paragraph}</p>
+              ))}
+            </InstructionBlock>
+            <div className="button-row">
+              <button className="primary" type="button" onClick={() => setScreen(gameConfig.setupScreen)}>Next</button>
+              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back</button>
+            </div>
+          </section>
+        );
+      case "hotSeatReveal":
+        return (
+          <section className="game-setup">
+            <p className="eyebrow">The Hot Seat</p>
+            <h1>Your question awaits.</h1>
+            <p className="lede">One question. Ninety seconds. Make it count.</p>
+            <div className={`question-reveal-card ${gameRevealSpinning ? "revealing" : ""} ${gameSession?.question ? "answered" : ""}`}>
+              {gameSession?.question || "?"}
+            </div>
+            <button
+              className="primary"
+              type="button"
+              disabled={gameRevealSpinning}
+              onClick={() => {
+                setGameRevealSpinning(true);
+                audio.slotTick();
+                window.setTimeout(prepareHotSeatQuestion, 760);
+              }}
+            >
+              Reveal Question
+            </button>
+          </section>
+        );
+      case "wordFusionSpin":
+        return (
+          <section className="spin-screen">
+            <p className="eyebrow">Word Fusion</p>
+            <h1>Spin your words.</h1>
+            <p className="lede">Three unexpected ingredients. One creative response.</p>
+            <SlotWindows items={slotItems} activeIndex={activeSlot} />
+            <button className="primary" type="button" onClick={spinWordFusion} disabled={activeSlot !== null || gameRevealSpinning || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
+          </section>
+        );
+      case "storyRelaySetup":
+        return (
+          <section className="game-setup">
+            <p className="eyebrow">Story Relay</p>
+            <h1>Every story starts somewhere.</h1>
+            <div className="game-prompt-card">
+              <span>Opening Line</span>
+              <strong>{gameSession?.openingLine || "Your opening line is waiting."}</strong>
+            </div>
+            <button className="primary" type="button" onClick={prepareStoryRelay}>
+              Begin Story
+            </button>
+          </section>
+        );
+      case "landPlaneSetup":
+        return (
+          <section className="game-setup land-plane-setup">
+            <p className="eyebrow">Land the Plane</p>
+            <h1>Prepare for landing.</h1>
+            <p className="lede">Read the argument. Deliver the ending.</p>
+            {gameSession?.outline ? (
+              <>
+                <SpeechOutlineCard outline={gameSession.outline} />
+                <p className="ready-line">Ready to deliver your conclusion?</p>
+                <button className="primary" type="button" onClick={() => setScreen("gamePrepCountdown")}>Start Challenge</button>
+              </>
+            ) : (
+              <>
+                <div className="game-prompt-card">
+                  <span>Speech Outline</span>
+                  <strong>Your speech outline is waiting.</strong>
+                </div>
+                <button className="primary" type="button" onClick={prepareLandPlane}>Reveal Speech</button>
+              </>
+            )}
+          </section>
+        );
+      case "gamePrepCountdown":
+        if (!gameConfig || !gameSession) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No game selected</p>
+              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
+            </section>
+          );
+        }
+        return (
+          <GamePrepCountdown
+            config={gameConfig}
+            session={gameSession}
+            onDone={() => setScreen("gameChallenge")}
+            onWarningSecond={warningTone}
+          />
+        );
+      case "gameChallenge":
+        if (!gameConfig || !gameSession) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No game selected</p>
+              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
+            </section>
+          );
+        }
+        return (
+          <SpeakingGameChallenge
+            config={gameConfig}
+            session={gameSession}
+            onComplete={completeSpeakingGame}
+            onWarningSecond={warningTone}
+            onTwist={audio.ding}
+          />
+        );
+      case "gameResults":
+        if (!gameConfig || !gameSession) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No game selected</p>
+              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
+            </section>
+          );
+        }
+        return (
+          <section className="results game-results">
+            <p className="eyebrow">Speaking Games</p>
+            <h1>{gameConfig.resultTitle}</h1>
+            <div className="summary-card">
+              <SummaryRow label="Game" value={gameConfig.name} />
+              {gameSession.question ? <SummaryRow label="Question" value={gameSession.question} /> : null}
+              {gameSession.words?.length ? <SummaryRow label="Words" value={gameSession.words.join(", ")} /> : null}
+              {gameSession.openingLine ? <SummaryRow label="Opening" value={gameSession.openingLine} /> : null}
+              {gameSession.twists?.length ? <SummaryRow label="Plot twists" value={gameSession.twists.join(" · ")} /> : null}
+              {gameSession.outline ? <SummaryRow label="Topic" value={gameSession.outline.topic} /> : null}
+              {gameSession.outline ? <SummaryRow label="Central message" value={gameSession.outline.centralMessage} /> : null}
+              <SummaryRow label="Time available" value={formatTime(gameConfig.durationSeconds)} />
+              <SummaryRow label="Time used" value={formatTime(gameSession.elapsedSeconds || 0)} />
+              <SummaryRow label="Completion" value={gameSession.completion === "expired" ? "Timer expired" : "I'm done"} />
+            </div>
+            <div className="analysis-error-card future-analysis-card">
+              <span className="eyebrow">Practice tip</span>
+              <p>{gameConfig.tip}</p>
+              <p>No personalized feedback has been generated for this game round.</p>
+            </div>
+            <div className="button-row">
+              <button className="primary" type="button" onClick={retrySpeakingGame}>{gameConfig.retryLabel}</button>
+              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
             </div>
           </section>
         );
       case "events":
         return (
           <section className="narrow">
-            <p className="eyebrow">Choose your event</p>
-            <h1>Choose your event</h1>
+            <p className="eyebrow">National Speech & Debate Association</p>
+            <h1>Choose Your Event</h1>
+            <p className="lede">Select a speaking event to begin your practice.</p>
             <div className="event-grid">
-              <button className="event-card" type="button" onClick={() => startMode("extemp")}>
-                <span>Extemporaneous Speaking</span>
-                <small>Research. Analyze. Persuade.</small>
-              </button>
               <button className="event-card" type="button" onClick={() => startMode("impromptu")}>
                 <span>Impromptu Speaking</span>
                 <small>Think quickly. Speak clearly.</small>
               </button>
+              <button className="event-card" type="button" onClick={() => startMode("extemp")}>
+                <span>Extemporaneous Speaking</span>
+                <small>Research. Analyze. Deliver.</small>
+              </button>
+              <button className="event-card" type="button" onClick={() => setScreen("preparedSelection")}>
+                <span>Prepared Speaking</span>
+                <small>Develop your message. Perfect your delivery.</small>
+              </button>
+              <button className="event-card" type="button" onClick={() => setScreen("interpretationSelection")}>
+                <span>Interpretation</span>
+                <small>Bring stories and characters to life.</small>
+              </button>
             </div>
           </section>
         );
+      case "preparedSelection":
+        return (
+          <section className="narrow">
+            <p className="eyebrow">Prepared Speaking</p>
+            <h1>Prepared Speaking</h1>
+            <p className="lede">Craft your message. Refine your performance.</p>
+            <div className="event-grid">
+              {PREPARED_EVENT_IDS.map((eventId) => {
+                const eventConfig = PREPARED_EVENT_CONFIGS[eventId];
+                return (
+                  <button className="event-card event-card-with-badge" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
+                    <span>{eventConfig.name}</span>
+                    <i className="event-acronym">{eventConfig.acronym}</i>
+                    <small>{eventConfig.shortDescription}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <button className="secondary" type="button" onClick={() => setScreen("events")}>
+              Back
+            </button>
+          </section>
+        );
+      case "interpretationSelection":
+        return (
+          <section className="narrow">
+            <p className="eyebrow">Interpretation</p>
+            <h1>Interpretation</h1>
+            <p className="lede">Transform literature into a compelling performance.</p>
+            <div className="event-grid">
+              {INTERPRETATION_EVENT_IDS.map((eventId) => {
+                const eventConfig = PREPARED_EVENT_CONFIGS[eventId];
+                return (
+                  <button className="event-card event-card-with-badge" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
+                    <span>{eventConfig.name}</span>
+                    <i className="event-acronym">{eventConfig.acronym}</i>
+                    <small>{eventConfig.shortDescription}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <button className="secondary" type="button" onClick={() => setScreen("events")}>
+              Back
+            </button>
+          </section>
+        );
+      case "preparedEventIntro":
+        if (!selectedPreparedEvent) {
+          return (
+            <section className="reading">
+              <h1>Select an event to continue</h1>
+              <button className="secondary" type="button" onClick={() => setScreen("events")}>
+                Back to Events
+              </button>
+            </section>
+          );
+        }
+        return (
+          <section className="reading">
+            <p className="eyebrow">{selectedPreparedEvent.name} · {selectedPreparedEvent.acronym}</p>
+            <h1>{selectedPreparedEvent.welcomeTitle}</h1>
+            <InstructionBlock>
+              {selectedPreparedEvent.introParagraphs.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+              <p>{selectedPreparedEvent.objectiveParagraph}</p>
+              <p>{selectedPreparedEvent.expectationsParagraph}</p>
+              <p><strong>Time limit: 10 minutes.</strong></p>
+              <p>
+                For this practice flow, Speech Brigade uses a ten-minute base performance timer. Official tournament
+                requirements may vary by event, tournament, and season.
+              </p>
+              <p>{selectedPreparedEvent.futureWorkflowParagraph}</p>
+              <p>
+                After setup, you will move to your speech workspace, review upcoming document tools, and launch a
+                timed practice performance.
+              </p>
+            </InstructionBlock>
+            <div className="button-row">
+              <button className="primary" type="button" onClick={() => setScreen("speechWorkspace")}>Next</button>
+              <button className="secondary" type="button" onClick={() => setScreen(selectedPreparedEvent.category === "prepared" ? "preparedSelection" : "interpretationSelection")}>Back</button>
+            </div>
+          </section>
+        );
+      case "speechWorkspace":
+        if (!selectedPreparedEvent) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No event selected</p>
+              <button className="secondary" type="button" onClick={() => setScreen("events")}>
+                Back to Events
+              </button>
+            </section>
+          );
+        }
+        return (
+          <section className="speech-workspace">
+            <p className="eyebrow">{selectedPreparedEvent.name} · {selectedPreparedEvent.acronym}</p>
+            <h1>Your Speech</h1>
+            <p className="lede">Upload your script to personalize your performance feedback, or continue without one.</p>
+            <input
+              ref={scriptInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+              onChange={handleScriptFileChange}
+            />
+            <div className="workspace-actions">
+              <button
+                className="workspace-card"
+                type="button"
+                onClick={() => scriptInputRef.current?.click()}
+              >
+                <span className="document-icon" aria-hidden="true" />
+                <strong>Upload Script</strong>
+                <small>PDF, DOCX, TXT, MD, and RTF files are supported.</small>
+              </button>
+              <button
+                className="workspace-card primary-action"
+                type="button"
+                data-no-press-sound="true"
+                onClick={() => {
+                  audio.unlock();
+                  setPreparedResult(null);
+                  setScreen("preparedDeliveryCountdown");
+                }}
+              >
+                <strong>{preparedScript?.status === "ready" ? "Begin Speech" : "Continue Without Script"}</strong>
+                <small>Start a timed performance now. Uploading a script is optional.</small>
+              </button>
+            </div>
+            {scriptUploadStatus ? <p className="script-status">{scriptUploadStatus}</p> : null}
+            {preparedScript ? (
+              <div className={`script-context-card ${preparedScript.status}`}>
+                <strong>{preparedScript.fileName}</strong>
+                <p>{preparedScript.message}</p>
+              </div>
+            ) : null}
+            <PracticePrivacyOptions
+              analysisEnabled={speechAnalysisEnabled}
+              saveRecordingEnabled={saveRecordingEnabled}
+              onAnalysisChange={(enabled) => {
+                if (enabled) audio.toggleOn();
+                else audio.toggleOff();
+                setSpeechAnalysisEnabled(enabled);
+                setRecordingError("");
+              }}
+              onSaveRecordingChange={(enabled) => {
+                if (enabled) audio.toggleOn();
+                else audio.toggleOff();
+                setSaveRecordingEnabled(enabled);
+                setRecordingError("");
+              }}
+            />
+            <button className="secondary" type="button" onClick={() => setScreen("preparedEventIntro")}>
+              Back
+            </button>
+          </section>
+        );
+      case "preparedDeliveryCountdown":
+        return (
+          <DeliveryCountdown
+            onDone={() => setScreen("preparedPerformance")}
+            onWarningSecond={warningTone}
+          />
+        );
+      case "preparedPerformance":
+        if (!selectedPreparedEvent) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No event selected</p>
+              <button className="secondary" type="button" onClick={() => setScreen("events")}>
+                Back to Events
+              </button>
+            </section>
+          );
+        }
+        return (
+          <section className="delivery-layout">
+            {speechAnalysisEnabled || saveRecordingEnabled ? (
+              recordingError ? (
+                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+              ) : (
+                <RecordingNotice />
+              )
+            ) : null}
+            <TimerPanel
+              label="Performance"
+              seconds={selectedPreparedEvent.performanceDurationSeconds}
+              buttonLabel="I'm done"
+              topic={`${selectedPreparedEvent.name} (${selectedPreparedEvent.acronym})`}
+              topicLabel={selectedPreparedEvent.id === "duo" ? "Two-person performance" : "Event"}
+              timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
+              onComplete={handlePreparedPerformanceComplete}
+              onWarningSecond={warningTone}
+            />
+            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
+          </section>
+        );
+      case "preparedResults": {
+        const resultEvent = preparedResult ? PREPARED_EVENT_CONFIGS[preparedResult.eventId] : selectedPreparedEvent;
+        if (!resultEvent || !preparedResult) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No performance recorded</p>
+              <button className="secondary" type="button" onClick={() => setScreen("events")}>
+                Back to Events
+              </button>
+            </section>
+          );
+        }
+        return (
+          <section className="results">
+            <p className="eyebrow">Round complete</p>
+            <h1>Round complete.</h1>
+            <p className="lede">Great work. You&apos;ve completed a practice performance.</p>
+            <div className="summary-card">
+              <SummaryRow label="Event" value={`${resultEvent.name} (${resultEvent.acronym})`} />
+              <SummaryRow label="Time limit" value={formatTime(resultEvent.performanceDurationSeconds)} />
+              <SummaryRow label="Performance time" value={formatTime(preparedResult.elapsedSeconds)} />
+              <SummaryRow label="Completion" value={preparedResult.completion === "expired" ? "Timer expired" : "I'm done"} />
+              {preparedScript?.status === "ready" ? <SummaryRow label="Script context" value={preparedScript.fileName} /> : null}
+            </div>
+            {preparedResult.analysis ? (
+              <ScorecardPanel
+                analysis={preparedResult.analysis}
+                transcript={preparedResult.analysisTranscript}
+                transcriptData={preparedResult.analysisTranscriptData}
+                audioUrl={preparedResult.analysisAudioUrl}
+                theme={resultEvent.category === "interpretation" ? "Interpretation performance" : "Prepared speaking"}
+                mode={resultEvent.id}
+              />
+            ) : preparedResult.analysisError ? (
+              <div className="analysis-error-card">
+                <span className="eyebrow">{preparedResult.analysisError.toLowerCase().includes("recording") ? "Recording unavailable" : "Analysis unavailable"}</span>
+                <p>{preparedResult.analysisError}</p>
+              </div>
+            ) : (
+              <div className="analysis-error-card future-analysis-card">
+                <span className="eyebrow">No analysis requested</span>
+                <p>This round was completed without speech analysis. Turn on speech analysis before your next performance to generate personalized feedback.</p>
+              </div>
+            )}
+            <div className="button-row">
+              <button className="primary" type="button" onClick={practicePreparedAgain}>Practice Again</button>
+              <button className="secondary" type="button" onClick={() => setScreen("events")}>Back to Events</button>
+            </div>
+          </section>
+        );
+      }
       case "eventsAuth":
         return (
           <section className="narrow auth-screen">
-            <p className="eyebrow">Sign in to continue</p>
-            <h1>Sign in to your account</h1>
+            <p className="eyebrow">{isSupabaseConfigured ? "Sign in to continue" : "Local preview"}</p>
+            <h1>{isSupabaseConfigured ? "Sign in to your account" : "Practice mode is available"}</h1>
             <p className="lede">
-              Sign in to your account, or sign up for a new one, to start a National Speech & Debate Association
-              practice round.
+              {isSupabaseConfigured
+                ? "Sign in to your account, or sign up for a new one, to start a National Speech & Debate Association practice round."
+                : "Supabase is not configured on this computer, so saved recordings and speech analysis are disabled. Timers, prompts, and practice rounds still work."}
             </p>
-            {authStatus === "sent" ? (
+            {!isSupabaseConfigured ? (
+              <button className="primary" type="button" onClick={() => setScreen("events")}>
+                Continue to Events
+              </button>
+            ) : null}
+            {isSupabaseConfigured && authStatus === "sent" ? (
               <div className="auth-sent">
                 <p>
                   Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here,
@@ -2117,7 +3756,7 @@ export default function SpeechBrigade() {
                   Use a different email
                 </button>
               </div>
-            ) : (
+            ) : isSupabaseConfigured ? (
               <form className="auth-form" onSubmit={sendMagicLink}>
                 <input
                   type="email"
@@ -2132,7 +3771,7 @@ export default function SpeechBrigade() {
                 </button>
                 {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
               </form>
-            )}
+            ) : null}
             <button className="secondary" type="button" onClick={goHome}>
               Back
             </button>
@@ -2141,12 +3780,18 @@ export default function SpeechBrigade() {
       case "signIn":
         return (
           <section className="narrow auth-screen">
-            <p className="eyebrow">Sign in</p>
-            <h1>Sign in to Speech Brigade</h1>
+            <p className="eyebrow">{isSupabaseConfigured ? "Sign in" : "Local preview"}</p>
+            <h1>{isSupabaseConfigured ? "Sign in to Speech Brigade" : "Account features are disabled locally"}</h1>
             <p className="lede">
-              Sign in with your email to save your recordings and access your account.
+              {isSupabaseConfigured
+                ? "Sign in with your email to save your recordings and access your account."
+                : "Add Supabase environment variables to enable sign-in, saved recordings, transcription, and speech analysis."}
             </p>
-            {authStatus === "sent" ? (
+            {!isSupabaseConfigured ? (
+              <button className="primary" type="button" onClick={() => setScreen("events")}>
+                Continue to Events
+              </button>
+            ) : authStatus === "sent" ? (
               <div className="auth-sent">
                 <p>
                   Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here,
@@ -2182,7 +3827,9 @@ export default function SpeechBrigade() {
           <section className="narrow auth-screen">
             <p className="eyebrow">Settings</p>
             <h1>Your account</h1>
-            {session ? (
+            {!isSupabaseConfigured ? (
+              <p className="lede">Supabase is not configured for this local preview, so account features are disabled.</p>
+            ) : session ? (
               <p className="lede">
                 You&apos;re signed in as <strong>{session.user.email}</strong>.
               </p>
@@ -2192,18 +3839,30 @@ export default function SpeechBrigade() {
             <button className="secondary" type="button" onClick={goHome}>
               Back
             </button>
-
-            {session ? (
+          </section>
+        );
+      case "pastSpeeches":
+        return (
+          <section className="narrow auth-screen">
+            <p className="eyebrow">Listen to Past Speeches</p>
+            <h1>Your vault</h1>
+            {!isSupabaseConfigured ? (
+              <p className="lede">Supabase is not configured for this local preview, so saved recordings are unavailable.</p>
+            ) : !session ? (
+              <>
+                <p className="lede">Sign in to listen to your saved practice speeches.</p>
+                <button className="primary" type="button" onClick={() => setScreen("signIn")}>
+                  Sign In
+                </button>
+              </>
+            ) : (
               <div className="vault-section">
-                <h2 className="vault-heading">
-                  Your <em>vault</em>
-                </h2>
                 {vaultLoading ? (
                   <p className="vault-status">Loading your recordings…</p>
                 ) : vaultError ? (
                   <p className="vault-status error">{vaultError}</p>
                 ) : vaultRecordings.length === 0 ? (
-                  <p className="vault-status">No recordings yet — complete a round to see it here.</p>
+                  <p className="vault-status">No recordings yet — turn on Save recording before a round to see it here.</p>
                 ) : (
                   <div className="vault-list">
                     {vaultRecordings.map((recording, index) => (
@@ -2217,7 +3876,10 @@ export default function SpeechBrigade() {
                   </div>
                 )}
               </div>
-            ) : null}
+            )}
+            <button className="secondary" type="button" onClick={goHome}>
+              Back
+            </button>
           </section>
         );
       case "impromptuIntro":
@@ -2233,6 +3895,22 @@ export default function SpeechBrigade() {
               <p>Once all three topics appear, you will have <strong>30 seconds to choose</strong>. If time expires, the first topic will be selected automatically.</p>
               <p>After choosing a topic, your preparation timer begins. When preparation ends, you will receive a <strong>5-second countdown</strong> before delivery begins.</p>
             </InstructionBlock>
+            <PracticePrivacyOptions
+              analysisEnabled={speechAnalysisEnabled}
+              saveRecordingEnabled={saveRecordingEnabled}
+	              onAnalysisChange={(enabled) => {
+	                if (enabled) audio.toggleOn();
+	                else audio.toggleOff();
+	                setSpeechAnalysisEnabled(enabled);
+	                setRecordingError("");
+	              }}
+	              onSaveRecordingChange={(enabled) => {
+	                if (enabled) audio.toggleOn();
+	                else audio.toggleOff();
+	                setSaveRecordingEnabled(enabled);
+	                setRecordingError("");
+	              }}
+            />
             <button className="primary" type="button" onClick={() => setScreen("timeAllocation")}>Next</button>
           </section>
         );
@@ -2338,37 +4016,41 @@ export default function SpeechBrigade() {
         );
       case "impromptuDelivery":
         return (
-          <>
-            {recordingError ? (
-              <p className="recording-notice error">Microphone unavailable — this round won&apos;t be scored.</p>
-            ) : (
-              <p className="recording-notice">
-                <span className="record-dot" />
-                Recording
-              </p>
-            )}
-            <TimerPanel
+          <section className="delivery-layout">
+            {speechAnalysisEnabled || saveRecordingEnabled ? (
+	              recordingError ? (
+		                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+	              ) : (
+	                <RecordingNotice />
+	              )
+	            ) : null}
+	            <TimerPanel
               label="Delivery"
               seconds={round.deliverySecondsAllocated}
               buttonLabel="I'm done"
               topic={round.selectedTopic}
               timerKey={`impromptu-delivery-${round.selectedTopic}`}
               onComplete={handleDeliveryComplete}
-              onWarningSecond={warningTone}
-            />
-          </>
-        );
+	              onWarningSecond={warningTone}
+	            />
+	            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
+	          </section>
+	        );
       case "analyzing":
         return (
           <section className="countdown-screen analyzing-screen">
             <div className="analyzing-spinner" />
-            <p>Scoring your speech</p>
-            <h1>
-              {analyzingStage === "uploading"
-                ? "Saving your recording…"
-                : analyzingStage === "transcribing"
-                  ? "Transcribing your speech…"
-                  : "Analyzing with AI…"}
+	            <p>{speechAnalysisEnabled ? "Scoring your speech" : "Saving your recording"}</p>
+	            <h1>
+	              {!speechAnalysisEnabled
+	                ? "Saving your recording…"
+	                : analyzingStage === "uploading"
+	                  ? saveRecordingEnabled
+	                    ? "Saving your recording…"
+	                    : "Preparing your speech…"
+	                  : analyzingStage === "transcribing"
+	                    ? "Transcribing your speech…"
+	                    : "Analyzing…"}
             </h1>
           </section>
         );
@@ -2384,6 +4066,22 @@ export default function SpeechBrigade() {
               <p>Use your preparation time to research the issue, decide on a direct answer, organize your main points, and identify evidence and examples that support your argument.</p>
               <p>When preparation ends, you will receive a <strong>5-second countdown</strong>. You will then have <strong>7 minutes</strong> to deliver your speech.</p>
             </InstructionBlock>
+            <PracticePrivacyOptions
+              analysisEnabled={speechAnalysisEnabled}
+              saveRecordingEnabled={saveRecordingEnabled}
+	              onAnalysisChange={(enabled) => {
+	                if (enabled) audio.toggleOn();
+	                else audio.toggleOff();
+	                setSpeechAnalysisEnabled(enabled);
+	                setRecordingError("");
+	              }}
+	              onSaveRecordingChange={(enabled) => {
+	                if (enabled) audio.toggleOn();
+	                else audio.toggleOff();
+	                setSaveRecordingEnabled(enabled);
+	                setRecordingError("");
+	              }}
+            />
             <button className="primary" type="button" onClick={() => setScreen("questionSpin")}>Next</button>
           </section>
         );
@@ -2426,26 +4124,26 @@ export default function SpeechBrigade() {
         );
       case "extempDelivery":
         return (
-          <>
-            {recordingError ? (
-              <p className="recording-notice error">Microphone unavailable — this round won&apos;t be scored.</p>
-            ) : (
-              <p className="recording-notice">
-                <span className="record-dot" />
-                Recording
-              </p>
-            )}
-            <TimerPanel
+          <section className="delivery-layout">
+            {speechAnalysisEnabled || saveRecordingEnabled ? (
+	              recordingError ? (
+		                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+	              ) : (
+	                <RecordingNotice />
+	              )
+	            ) : null}
+	            <TimerPanel
               label="Delivery"
               seconds={420}
               buttonLabel="I'm done"
               topic={selectedPrompt}
               timerKey={`extemp-delivery-${selectedPrompt}`}
               onComplete={handleDeliveryComplete}
-              onWarningSecond={warningTone}
-            />
-          </>
-        );
+	              onWarningSecond={warningTone}
+	            />
+	            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
+	          </section>
+	        );
       case "results":
         if (round.mode && round.analysis) {
           return (
@@ -2493,11 +4191,11 @@ export default function SpeechBrigade() {
               <SummaryRow label="Delivery used" value={formatTime(round.deliverySecondsUsed)} />
             </div>
 
-            {round.analysisError ? (
-              <div className="analysis-error-card">
-                <span className="eyebrow">Analysis unavailable</span>
-                <p>{round.analysisError}</p>
-              </div>
+	            {round.analysisError ? (
+	              <div className="analysis-error-card">
+	                <span className="eyebrow">{round.analysisError.toLowerCase().includes("recording") ? "Recording unavailable" : "Analysis unavailable"}</span>
+	                <p>{round.analysisError}</p>
+	              </div>
             ) : null}
 
             <div className="button-row">
@@ -2511,96 +4209,199 @@ export default function SpeechBrigade() {
           return (
             <section className="results">
               <p className="eyebrow">No recording selected</p>
-              <button className="secondary" type="button" onClick={() => setScreen("settings")}>
+              <button className="secondary" type="button" onClick={() => setScreen("pastSpeeches")}>
                 Back to your vault
               </button>
             </section>
           );
         }
-        return (
-          <section className="results">
-            <button type="button" className="back-link" onClick={() => setScreen("settings")}>
-              ← Back to your vault
-            </button>
-            <ScorecardPanel
-              analysis={activeVaultAnalysis.analysis}
-              transcript={activeVaultAnalysis.transcript}
-              transcriptData={activeVaultAnalysis.transcriptData}
-              audioUrl={activeVaultAnalysis.audioUrl}
-              theme=""
-              mode={activeVaultAnalysis.mode}
-            />
-          </section>
-        );
+	        return (
+	          <section className="results">
+		            <button type="button" className="back-link" onClick={() => setScreen("pastSpeeches")}>
+		              ← Back to your vault
+		            </button>
+	            {activeVaultAnalysis.analysis ? (
+	              <ScorecardPanel
+	                analysis={activeVaultAnalysis.analysis}
+	                transcript={activeVaultAnalysis.transcript}
+	                transcriptData={activeVaultAnalysis.transcriptData}
+	                audioUrl={activeVaultAnalysis.audioUrl}
+	                theme=""
+	                mode={activeVaultAnalysis.mode}
+	              />
+	            ) : (
+	              <div className="recording-review-card">
+	                <p className="eyebrow">Saved recording</p>
+	                <h1>Practice recording.</h1>
+	                <div className="summary-card">
+	                  <SummaryRow label="Event" value={formatAnalysisModeLabel(activeVaultAnalysis.mode)} />
+	                  <SummaryRow label="Prompt" value={activeVaultAnalysis.prompt} />
+	                  <SummaryRow label="Duration" value={formatVaultDuration(activeVaultAnalysis.durationSeconds)} />
+	                </div>
+	                {activeVaultAnalysis.audioUrl ? <AudioPlayer src={activeVaultAnalysis.audioUrl} /> : null}
+	              </div>
+	            )}
+	          </section>
+	        );
       default:
         return null;
     }
-  }, [
-    screen,
-    round,
-    allocationIndex,
-    activeSlot,
-    slotItems,
-    lockedChoice,
-    themeDisplay,
-    themeSpinning,
-    session,
-    authEmail,
-    authStatus,
-    authError,
-    analyzingStage,
-    recordingError,
-    vaultRecordings,
-    vaultLoading,
-    vaultError,
-    activeVaultAnalysis,
-  ]);
+  })();
 
   return (
-    <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`} onPointerDownCapture={playInteractionSound}>
+	    <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`} onPointerDownCapture={playInteractionSound}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
       <div className="ambient" aria-hidden="true" />
-      <header className="app-header">
-        {screen === "landing" ? (
-          <>
-            <div />
-            <div />
-          </>
-        ) : (
-          <>
-            <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
-              <span>Speech</span> Brigade
-            </button>
-            <div>{modeLabel}</div>
-          </>
-        )}
-        {session ? (
-          <button className="home-button" type="button" onClick={() => setScreen("settings")}>
-            Settings
-          </button>
-        ) : (
-          <button
-            className="home-button"
-            type="button"
-            onClick={() => setScreen("signIn")}
-          >
-            {screen === "landing" ? "Sign Up" : "Sign In"}
-          </button>
-        )}
-      </header>
-      <div className="screen-frame" key={screen}>
+	      <header className="app-header">
+	        {screen === "landing" ? (
+	          <>
+	            <div className="header-spacer" />
+	            <div className="mode-label" />
+	          </>
+	        ) : (
+	          <>
+	            <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
+	              <span>Speech</span> Brigade
+	            </button>
+	            <div className="mode-label">{modeLabel}</div>
+	          </>
+	        )}
+	        <nav className="header-actions" aria-label="Account and recordings">
+	          <button
+	            className="home-button"
+	            type="button"
+		            onClick={() => setScreen("pastSpeeches")}
+	          >
+	            Listen to Past Speeches
+	          </button>
+	          {session ? (
+	            <button className="home-button" type="button" onClick={() => setScreen("settings")}>
+	              Settings
+	            </button>
+	          ) : (
+	            <button
+	              className="home-button"
+	              type="button"
+	              onClick={() => setScreen("signIn")}
+	            >
+	              {screen === "landing" ? "Sign Up" : "Sign In"}
+	            </button>
+	          )}
+	        </nav>
+	      </header>
+      <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={screen}>
         {content}
       </div>
-      <a
+      <button
+        type="button"
         className="creator-float"
-        href="https://www.jdhopper.org"
-        aria-label="Click to learn more about website creator JD Hopper"
+        onClick={() => setFoundersOpen(true)}
+        aria-label="Learn about Speech Brigade's founders"
       >
-        <span className="creator-copy">Click To Learn More About Website Creator <u>JD Hopper</u></span>
-      </a>
+        <span className="creator-copy">Learn About Speech Brigade&apos;s Founders</span>
+      </button>
+      {infoModal ? (
+        <div
+          className="founders-modal-backdrop"
+          role="presentation"
+          onMouseDown={closeInfoModal}
+        >
+          <section
+            className="info-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="info-modal-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="founders-close"
+              type="button"
+              onClick={closeInfoModal}
+              aria-label="Close informational popup"
+            >
+              ×
+            </button>
+            <span className="document-icon large" aria-hidden="true" />
+            {infoModal.badge ? <span className="coming-soon-badge">{infoModal.badge}</span> : null}
+            <h2 id="info-modal-title">{infoModal.title}</h2>
+            <div className="info-modal-copy">
+              {infoModal.body.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+            </div>
+            <button className="primary" type="button" onClick={closeInfoModal}>
+              Got it
+            </button>
+          </section>
+        </div>
+      ) : null}
+      {foundersOpen ? (
+        <div
+          className="founders-modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setFoundersOpen(false)}
+        >
+          <section
+            className="founders-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="founders-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="founders-close"
+              type="button"
+              onClick={() => setFoundersOpen(false)}
+              aria-label="Close founders popup"
+            >
+              ×
+            </button>
+            <p className="eyebrow">Speech Brigade</p>
+            <h2 id="founders-title">Meet the Founders</h2>
+            <div className="founders-grid">
+              <article className="founder-card">
+                <Image
+                  src="/founders/mona-su.jpg"
+                  alt="Mona Su"
+                  width={400}
+                  height={400}
+                  sizes="(max-width: 760px) 90vw, 360px"
+                />
+                <h3>Mona Su</h3>
+                <div className="founder-links">
+                  <a href="https://www.speechpact.com/" target="_blank" rel="noreferrer">
+                    Website
+                  </a>
+                  <a href="https://www.linkedin.com/in/mona-su-255301195" target="_blank" rel="noreferrer">
+                    LinkedIn
+                  </a>
+                </div>
+              </article>
+              <article className="founder-card">
+                <Image
+                  src="/founders/jd-hopper-founder.png"
+                  alt="JD Hopper speaking"
+                  width={900}
+                  height={900}
+                  sizes="(max-width: 760px) 90vw, 360px"
+                />
+                <h3>JD Hopper</h3>
+                <div className="founder-links">
+                  <a href="https://www.jdhopper.org/" target="_blank" rel="noreferrer">
+                    Website
+                  </a>
+                  <a href="https://www.linkedin.com/in/jd-hopper" target="_blank" rel="noreferrer">
+                    LinkedIn
+                  </a>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
