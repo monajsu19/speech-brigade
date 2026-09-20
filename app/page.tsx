@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase, supabaseUrl } from "./supabaseClient";
 
 type EventMode = "impromptu" | "extemp";
 type Screen =
   | "landing"
+  | "eventsAuth"
   | "events"
+  | "signIn"
+  | "settings"
   | "impromptuIntro"
   | "timeAllocation"
   | "themeSpin"
@@ -15,12 +20,112 @@ type Screen =
   | "impromptuPrep"
   | "deliveryCountdown"
   | "impromptuDelivery"
+  | "analyzing"
   | "extempIntro"
   | "questionSpin"
   | "questionSelect"
   | "extempPrep"
   | "extempDelivery"
-  | "results";
+  | "results"
+  | "vaultAnalysis";
+
+// impromptu scores organization/analysis/delivery; extemp scores
+// argumentationAnalysis/sourceConsideration/delivery. Only 3 of these 5 keys
+// are ever populated on a given AnalysisResult, depending on mode.
+type CategoryKey = "organization" | "analysis" | "delivery" | "argumentationAnalysis" | "sourceConsideration";
+type WeakAxis = CategoryKey | "grammar" | "vocab";
+type GrammarSubcategory = "agreement" | "verbTense" | "sentenceStructure" | "wordUsage";
+type Section = "opening" | "body" | "closing";
+
+interface CategoryResult {
+  stars: number;
+  takeaway: string;
+}
+
+interface SentenceTip {
+  text: string;
+  section: Section;
+  weakAxis: WeakAxis | null;
+  tip: string | null;
+  example: string | null;
+  errorSpan: string | null;
+  grammarSubcategory: GrammarSubcategory[] | null;
+}
+
+interface WordCallout {
+  word: string;
+  count: number;
+  reason: string;
+}
+
+type TaggedWord = WordCallout & { tone: "power" | "weak" };
+
+type AnalysisTab = "scorecard" | "structure" | "words" | "grammar";
+
+interface SectionTip {
+  title: string;
+  body: string;
+  example: string;
+}
+
+interface Scorecard {
+  stars: number;
+  title: string;
+  description: string;
+}
+
+interface GrammarBreakdown {
+  agreement: number;
+  verbTense: number;
+  sentenceStructure: number;
+  wordUsage: number;
+}
+
+interface AnalysisResult {
+  categories: Partial<Record<CategoryKey, CategoryResult>>;
+  grammarBreakdown: GrammarBreakdown;
+  grammarSummary: string;
+  vocabSummary: string;
+  scorecard: Scorecard;
+  fillerCount: number;
+  pauseCount: number;
+  wordsPerMinute: number;
+  sentences: SentenceTip[];
+  sectionTips: Record<Section, SectionTip>;
+  powerWords: WordCallout[];
+  weakWords: WordCallout[];
+  idealStructure: { opening: number; body: number; closing: number };
+  yourStructure: { opening: number; body: number; closing: number };
+  topic: string;
+  keyTakeawayTip: string;
+}
+
+interface TranscriptSentenceTiming {
+  text: string;
+  start: number;
+  end: number;
+}
+
+interface TranscriptData {
+  paragraphs?: Array<{
+    sentences?: TranscriptSentenceTiming[];
+  }>;
+}
+
+interface VaultRecording {
+  id: string;
+  prompt: string;
+  mode: EventMode;
+  duration_seconds: number | null;
+  transcript: string | null;
+  transcript_data: TranscriptData | null;
+  audio_url: string | null;
+  analysis: AnalysisResult | null;
+  created_at: string;
+}
+
+
+type AnalyzingStage = "uploading" | "transcribing" | "analyzing";
 
 type ThemeBank = { theme: string; topics: string[] };
 type ExtempQuestion = { category: string; question: string };
@@ -38,6 +143,11 @@ type RoundState = {
   prepSecondsUsed: number;
   deliverySecondsUsed: number;
   roundStartTime: number | null;
+  analysis: AnalysisResult | null;
+  analysisTranscript: string;
+  analysisTranscriptData: TranscriptData | null;
+  analysisAudioUrl: string;
+  analysisError: string | null;
 };
 
 const initialRound: RoundState = {
@@ -52,6 +162,11 @@ const initialRound: RoundState = {
   prepSecondsUsed: 0,
   deliverySecondsUsed: 0,
   roundStartTime: null,
+  analysis: null,
+  analysisTranscript: "",
+  analysisTranscriptData: null,
+  analysisAudioUrl: "",
+  analysisError: null,
 };
 
 const themeBank: ThemeBank[] = [
@@ -389,6 +504,12 @@ function formatTime(totalSeconds: number) {
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+function formatClock(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(totalSeconds || 0));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function randomItem<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
 }
@@ -654,9 +775,831 @@ function InstructionBlock({ children }: { children: React.ReactNode }) {
   return <div className="instruction-copy">{children}</div>;
 }
 
+function StarRating({ value }: { value: number }) {
+  const stars = Math.max(0, Math.min(5, Math.round(value)));
+  return (
+    <span className="star-rating" aria-label={`${stars} out of 5 stars`}>
+      {Array.from({ length: 5 }, (_, index) => (
+        <i key={index} className={index < stars ? "filled" : ""}>
+          ★
+        </i>
+      ))}
+    </span>
+  );
+}
+
+const categoryLabels: Record<CategoryKey, string> = {
+  organization: "Organization",
+  analysis: "Analysis",
+  delivery: "Delivery",
+  argumentationAnalysis: "Argumentation and Analysis",
+  sourceConsideration: "Source Consideration",
+};
+
+const CATEGORY_ORDER_BY_MODE: Record<EventMode, CategoryKey[]> = {
+  impromptu: ["organization", "analysis", "delivery"],
+  extemp: ["argumentationAnalysis", "sourceConsideration", "delivery"],
+};
+
+const weakAxisLabels: Record<WeakAxis, string> = {
+  organization: "Organization",
+  analysis: "Analysis",
+  delivery: "Delivery",
+  argumentationAnalysis: "Argumentation and Analysis",
+  sourceConsideration: "Source Consideration",
+  grammar: "Grammar",
+  vocab: "Vocab",
+};
+
+function StructureBar({
+  ideal,
+  yours,
+}: {
+  ideal: { opening: number; body: number; closing: number };
+  yours: { opening: number; body: number; closing: number };
+}) {
+  const sections: Array<{ key: Section; label: string }> = [
+    { key: "opening", label: "Opening" },
+    { key: "body", label: "Body" },
+    { key: "closing", label: "Closing" },
+  ];
+  return (
+    <div className="structure-sandwich">
+      <div className="structure-column">
+        <span className="structure-column-label">Ideal</span>
+        <div className="structure-stack">
+          {sections.map(({ key, label }) => (
+            <div key={key} className={`structure-block filled ${key}`} style={{ flexGrow: Math.max(ideal[key], 4) }}>
+              <span>
+                {label} · {ideal[key]}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="structure-column">
+        <span className="structure-column-label">Yours</span>
+        <div className="structure-stack">
+          {sections.map(({ key, label }) => {
+            const missing = yours[key] <= 2;
+            return (
+              <div
+                key={key}
+                className={`structure-block ${missing ? "missing" : `outline ${key}`}`}
+                style={{ flexGrow: Math.max(yours[key], 8) }}
+              >
+                <span>{missing ? "Missing" : `${label} · ${yours[key]}%`}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+function TranscriptCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <button type="button" className="transcript-copy-button" onClick={handleCopy} aria-label="Copy transcript">
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </button>
+  );
+}
+
+function alignSentenceTimestamps(sentences: SentenceTip[], transcriptData: TranscriptData | null): Map<SentenceTip, string> {
+  const timedSentences: TranscriptSentenceTiming[] = transcriptData?.paragraphs?.flatMap((p) => p.sentences || []) || [];
+  const map = new Map<SentenceTip, string>();
+  let cursor = 0;
+  sentences.forEach((sentence) => {
+    const target = sentence.text.trim();
+    for (let i = cursor; i < timedSentences.length; i++) {
+      if (timedSentences[i].text.trim() === target) {
+        map.set(sentence, formatClock(timedSentences[i].start));
+        cursor = i + 1;
+        break;
+      }
+    }
+  });
+  return map;
+}
+
+function SectionedTranscript({
+  sentences,
+  timestamps,
+  pauseCount,
+  wordsPerMinute,
+  transcriptText,
+  renderSentence,
+  renderSectionFooter,
+}: {
+  sentences: SentenceTip[];
+  timestamps: Map<SentenceTip, string>;
+  pauseCount: number;
+  wordsPerMinute: number;
+  transcriptText: string;
+  renderSentence: (sentence: SentenceTip, key: string) => React.ReactNode;
+  renderSectionFooter?: (section: Section) => React.ReactNode;
+}) {
+  if (!sentences.length) return null;
+  const sections: Section[] = ["opening", "body", "closing"];
+  return (
+    <div className="transcript-card">
+      <div className="transcript-header">
+        <div className="transcript-header-pills">
+          <span className="transcript-label">Transcript</span>
+          <span className="transcript-pill">
+            {pauseCount} {pauseCount === 1 ? "Pause" : "Pauses"}
+          </span>
+          <span className="transcript-pill">{wordsPerMinute} WPM</span>
+        </div>
+        <TranscriptCopyButton text={transcriptText} />
+      </div>
+      <div className="sentence-list">
+        {sections.map((section) => {
+          const items = sentences.filter((sentence) => sentence.section === section);
+          if (!items.length) return null;
+          return (
+            <div className="sentence-section" key={section}>
+              <h4>{section}</h4>
+              {items.map((sentence, index) => {
+                const key = `${section}-${index}`;
+                return (
+                  <div className="sentence-row-wrap" key={key}>
+                    <span className="sentence-timestamp">{timestamps.get(sentence) || "—"}</span>
+                    <div className="sentence-row-body">{renderSentence(sentence, key)}</div>
+                  </div>
+                );
+              })}
+              {renderSectionFooter ? renderSectionFooter(section) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PlainSentence({ text, keyId }: { text: string; keyId: string }) {
+  return (
+    <p className="sentence-row plain" key={keyId}>
+      {text}
+    </p>
+  );
+}
+
+function TipPopover({
+  label,
+  correction,
+  rewrite,
+  description,
+  isPinned = false,
+  onClose,
+}: {
+  label: string;
+  correction?: { before: string; after: string } | null;
+  rewrite?: string | null;
+  description?: string | null;
+  isPinned?: boolean;
+  onClose?: () => void;
+}) {
+  return (
+    <span className={`tip-popover ${isPinned ? "pinned" : ""}`} role="tooltip">
+      <span className="tip-popover-head">
+        <span className="tip-popover-label">{label}</span>
+        {onClose ? (
+          <button
+            type="button"
+            className="tip-popover-close"
+            aria-label="Dismiss tip"
+            onClick={(event) => {
+              onClose?.();
+              event.currentTarget.blur();
+            }}
+          >
+            ×
+          </button>
+        ) : null}
+      </span>
+      {correction ? (
+        <p className="tip-popover-correction">
+          <s>{correction.before}</s>
+          <span aria-hidden="true"> → </span>
+          <strong>{correction.after}</strong>
+        </p>
+      ) : rewrite ? (
+        <p className="tip-popover-rewrite">{rewrite}</p>
+      ) : null}
+      {description ? <p className="tip-popover-desc">{description}</p> : null}
+    </span>
+  );
+}
+
+function getCorrectedSpan(text: string, errorSpan: string, example: string): string {
+  const index = text.indexOf(errorSpan);
+  if (index === -1) return example;
+  const prefix = text.slice(0, index);
+  const suffix = text.slice(index + errorSpan.length);
+  if (example.startsWith(prefix) && example.endsWith(suffix) && example.length >= prefix.length + suffix.length) {
+    return example.slice(prefix.length, example.length - suffix.length);
+  }
+  return example;
+}
+
+function FlaggedSentence({
+  sentence,
+  keyId,
+  openKey,
+  setOpenKey,
+  grammarOnly,
+}: {
+  sentence: SentenceTip;
+  keyId: string;
+  openKey: string | null;
+  setOpenKey: (key: string | null) => void;
+  grammarOnly?: boolean;
+}) {
+  const isFlagged = grammarOnly ? sentence.weakAxis === "grammar" : Boolean(sentence.weakAxis);
+  if (!isFlagged || !sentence.weakAxis) {
+    return <PlainSentence text={sentence.text} keyId={keyId} />;
+  }
+
+  const axis = sentence.weakAxis;
+  const isPinned = openKey === keyId;
+  const label = `${weakAxisLabels[axis]} tip`;
+  const close = () => setOpenKey(null);
+  const toggle = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (isPinned) event.currentTarget.blur();
+    setOpenKey(isPinned ? null : keyId);
+  };
+
+  if (axis === "grammar" && sentence.errorSpan) {
+    const index = sentence.text.indexOf(sentence.errorSpan);
+    if (index !== -1) {
+      const before = sentence.text.slice(0, index);
+      const after = sentence.text.slice(index + sentence.errorSpan.length);
+      const corrected = sentence.example ? getCorrectedSpan(sentence.text, sentence.errorSpan, sentence.example) : sentence.errorSpan;
+      return (
+        <div className="sentence-row plain" key={keyId}>
+          {before}
+          <span className="flag-anchor">
+            <button type="button" className="axis-pill span grammar" aria-expanded={isPinned} onClick={toggle}>
+              {sentence.errorSpan}
+            </button>
+            <TipPopover
+              label={label}
+              correction={{ before: sentence.errorSpan, after: corrected }}
+              description={sentence.tip}
+              isPinned={isPinned}
+              onClose={close}
+            />
+          </span>
+          {after}
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div className="sentence-row flagged" key={keyId}>
+      <span className="flag-anchor">
+        <button type="button" className={`axis-pill sentence ${axis}`} aria-expanded={isPinned} onClick={toggle}>
+          {sentence.text}
+        </button>
+        <TipPopover label={label} rewrite={sentence.example} description={sentence.tip} isPinned={isPinned} onClose={close} />
+      </span>
+    </div>
+  );
+}
+
+function highlightWordsInSentence(text: string, taggedWords: TaggedWord[], idPrefix: string) {
+  if (!taggedWords.length) return text;
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sorted = [...taggedWords].sort((a, b) => b.word.length - a.word.length);
+  const pattern = new RegExp(`\\b(${sorted.map((word) => escape(word.word)).join("|")})\\b`, "gi");
+  const parts = text.split(pattern);
+  let matchCount = 0;
+  return parts.map((part, index) => {
+    const match = taggedWords.find((word) => word.word.toLowerCase() === part.toLowerCase());
+    if (!match) return <span key={index}>{part}</span>;
+    const id = `${idPrefix}-${matchCount}`;
+    matchCount += 1;
+    return (
+      <span className="flag-anchor" key={id}>
+        <span className={`word-mark ${match.tone}`} tabIndex={0}>
+          {part}
+        </span>
+        <TipPopover label={match.tone === "power" ? "Power word" : "Weak word"} description={match.reason} />
+      </span>
+    );
+  });
+}
+
+function CategoryAccordion({
+  categories,
+  categoryKeys,
+}: {
+  categories: Partial<Record<CategoryKey, CategoryResult>>;
+  categoryKeys: CategoryKey[];
+}) {
+  const [openKey, setOpenKey] = useState<CategoryKey | null>(categoryKeys[0] ?? null);
+  return (
+    <div className="category-accordion">
+      {categoryKeys.map((key) => {
+        const isOpen = openKey === key;
+        const result = categories[key];
+        if (!result) return null;
+        return (
+          <div className={`accordion-row ${isOpen ? "open" : ""}`} key={key}>
+            <button
+              type="button"
+              className="accordion-head"
+              aria-expanded={isOpen}
+              onClick={() => setOpenKey(isOpen ? null : key)}
+            >
+              <span className={`accordion-label ${key}`}>{categoryLabels[key]}</span>
+              <StarRating value={result.stars} />
+              <span className="accordion-chevron" aria-hidden="true">⌄</span>
+            </button>
+            {isOpen ? <p className="accordion-body">{result.takeaway}</p> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WordListCard({ title, words, tone }: { title: string; words: WordCallout[]; tone: "power" | "weak" }) {
+  const total = words.reduce((sum, word) => sum + word.count, 0);
+  return (
+    <div className={`word-list-card ${tone}`}>
+      <div className="word-list-head">
+        <h3>{title}</h3>
+        <span className="word-count-badge">
+          {total} {total === 1 ? "word" : "words"}
+        </span>
+      </div>
+      {words.length ? (
+        <div className="word-chip-cloud">
+          {words.map((word) => (
+            <span className={`word-chip ${tone}`} key={word.word} title={word.reason}>
+              {word.word} <em>×{word.count}</em>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="word-list-empty">None flagged.</p>
+      )}
+    </div>
+  );
+}
+
+const grammarBucketInfo: Array<{ key: keyof GrammarBreakdown; label: string }> = [
+  { key: "agreement", label: "Agreement" },
+  { key: "verbTense", label: "Verb tense" },
+  { key: "sentenceStructure", label: "Sentence structure" },
+  { key: "wordUsage", label: "Word usage" },
+];
+
+function WarningIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4M12 17h.01" />
+    </svg>
+  );
+}
+
+function GrammarSummaryCard({ breakdown, summary }: { breakdown: GrammarBreakdown; summary: string }) {
+  const total = breakdown.agreement + breakdown.verbTense + breakdown.sentenceStructure + breakdown.wordUsage;
+  return (
+    <div className="grammar-summary-card">
+      <div className={`grammar-summary-banner ${total === 0 ? "clean" : "warn"}`}>
+        <WarningIcon />
+        <span>{total === 0 ? "No grammar issues found" : `${total} grammar issue${total === 1 ? "" : "s"} found`}</span>
+      </div>
+      <p className="grammar-summary-text">{summary}</p>
+      <ul className="grammar-bucket-list">
+        {grammarBucketInfo.map((bucket) => {
+          const count = breakdown[bucket.key];
+          return (
+            <li key={bucket.key}>
+              <span>{bucket.label}</span>
+              <span className="grammar-bucket-count">{count === 0 ? "No issues" : `${count} issue${count === 1 ? "" : "s"}`}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <path d="M7 5v14l12-7z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SparkleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ChartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20V10M12 20V4M20 20v-7" />
+    </svg>
+  );
+}
+
+function LayersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+      <path d="M12 3l9 5-9 5-9-5 9-5z" />
+      <path d="M3 13l9 5 9-5" />
+    </svg>
+  );
+}
+
+function TypeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M5 5h14M12 5v14" />
+    </svg>
+  );
+}
+
+function SpellCheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 16l4-11 4 11M5.5 12h5" />
+      <path d="M14 12l3 3 5-6" />
+    </svg>
+  );
+}
+
+const TAB_CONFIG: Array<{ key: AnalysisTab; label: string; icon: React.ReactNode }> = [
+  { key: "scorecard", label: "Speech Scorecard", icon: <ChartIcon /> },
+  { key: "structure", label: "Structure Sandwich", icon: <LayersIcon /> },
+  { key: "words", label: "Word Analysis", icon: <TypeIcon /> },
+  { key: "grammar", label: "Grammar", icon: <SpellCheckIcon /> },
+];
+
+function AudioPlayer({ src }: { src: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    const audioEl = audioRef.current;
+    if (!audioEl) return undefined;
+    const onTime = () => setCurrentTime(audioEl.currentTime);
+    const onLoaded = () => setDuration(audioEl.duration || 0);
+    const onEnded = () => setIsPlaying(false);
+    audioEl.addEventListener("timeupdate", onTime);
+    audioEl.addEventListener("loadedmetadata", onLoaded);
+    audioEl.addEventListener("ended", onEnded);
+    return () => {
+      audioEl.removeEventListener("timeupdate", onTime);
+      audioEl.removeEventListener("loadedmetadata", onLoaded);
+      audioEl.removeEventListener("ended", onEnded);
+    };
+  }, [src]);
+
+  const toggle = () => {
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+    if (audioEl.paused) {
+      void audioEl.play();
+      setIsPlaying(true);
+    } else {
+      audioEl.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const seek = (event: React.MouseEvent<HTMLDivElement>) => {
+    const audioEl = audioRef.current;
+    if (!audioEl || !duration) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    audioEl.currentTime = ratio * duration;
+    setCurrentTime(audioEl.currentTime);
+  };
+
+  const progress = duration ? currentTime / duration : 0;
+
+  return (
+    <div className="audio-player">
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <button type="button" className="audio-play-button" onClick={toggle} aria-label={isPlaying ? "Pause" : "Play"}>
+        {isPlaying ? <PauseIcon /> : <PlayIcon />}
+      </button>
+      <div className="audio-scrubber-wrap">
+        <div className="audio-scrubber" onClick={seek}>
+          <i style={{ width: `${progress * 100}%` }} />
+        </div>
+        <div className="audio-times">
+          <span>{formatClock(currentTime)}</span>
+          <span>{formatClock(duration)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScorecardPanel({
+  analysis,
+  transcript,
+  transcriptData,
+  audioUrl,
+  theme,
+  mode,
+}: {
+  analysis: AnalysisResult;
+  transcript: string;
+  transcriptData: TranscriptData | null;
+  audioUrl: string;
+  theme: string;
+  mode: EventMode;
+}) {
+  const [activeTab, setActiveTab] = useState<AnalysisTab>("scorecard");
+  const [openKey, setOpenKey] = useState<string | null>(null);
+
+  const switchTab = (tab: AnalysisTab) => {
+    setActiveTab(tab);
+    setOpenKey(null);
+  };
+
+  const taggedWords: TaggedWord[] = [
+    ...analysis.powerWords.map((word) => ({ ...word, tone: "power" as const })),
+    ...analysis.weakWords.map((word) => ({ ...word, tone: "weak" as const })),
+  ];
+
+  const sentenceTimestamps = alignSentenceTimestamps(analysis.sentences, transcriptData);
+
+  return (
+    <div className="analysis-page">
+      <div className="verdict-card">
+        <div className="verdict-score">
+          <span>Score</span>
+          <StarRating value={analysis.scorecard.stars} />
+          <strong>{analysis.scorecard.stars} / 5</strong>
+        </div>
+        <div className="verdict-body">
+          <h2>{analysis.scorecard.title}</h2>
+          <p>{analysis.scorecard.description}</p>
+        </div>
+      </div>
+
+      <div className="topic-card">
+        {theme ? (
+          <div className="topic-card-head">
+            <span className="eyebrow">{theme}</span>
+          </div>
+        ) : null}
+        <h2 className="topic-heading">{analysis.topic}</h2>
+        {audioUrl ? <AudioPlayer src={audioUrl} /> : null}
+      </div>
+
+      <div className="metric-row">
+        <div>
+          <span>Words per minute</span>
+          <strong>{analysis.wordsPerMinute}</strong>
+        </div>
+        <div>
+          <span>Filler words</span>
+          <strong>{analysis.fillerCount}</strong>
+        </div>
+        <div>
+          <span>Pauses</span>
+          <strong>{analysis.pauseCount}</strong>
+        </div>
+      </div>
+
+      <div className="tab-bar" role="tablist">
+        {TAB_CONFIG.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            className={`tab-button ${activeTab === tab.key ? "active" : ""}`}
+            onClick={() => switchTab(tab.key)}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="tab-panel">
+        {activeTab === "scorecard" ? (
+          <>
+            <CategoryAccordion categories={analysis.categories} categoryKeys={CATEGORY_ORDER_BY_MODE[mode]} />
+            <SectionedTranscript
+              sentences={analysis.sentences}
+              timestamps={sentenceTimestamps}
+              pauseCount={analysis.pauseCount}
+              wordsPerMinute={analysis.wordsPerMinute}
+              transcriptText={transcript}
+              renderSentence={(sentence, key) => (
+                <FlaggedSentence sentence={sentence} keyId={key} openKey={openKey} setOpenKey={setOpenKey} />
+              )}
+            />
+            <div className="takeaway-callout">
+              <span className="eyebrow">
+                <SparkleIcon /> Biggest room for improvement
+              </span>
+              <p>{analysis.keyTakeawayTip}</p>
+            </div>
+          </>
+        ) : null}
+
+        {activeTab === "structure" ? (
+          <>
+            <StructureBar ideal={analysis.idealStructure} yours={analysis.yourStructure} />
+            <SectionedTranscript
+              sentences={analysis.sentences}
+              timestamps={sentenceTimestamps}
+              pauseCount={analysis.pauseCount}
+              wordsPerMinute={analysis.wordsPerMinute}
+              transcriptText={transcript}
+              renderSentence={(sentence, key) => <PlainSentence text={sentence.text} keyId={key} />}
+              renderSectionFooter={(section) => {
+                const tip = analysis.sectionTips[section];
+                return (
+                  <details className="structure-tip-card" open>
+                    <summary>
+                      <span className="structure-tip-title">
+                        <SparkleIcon /> {tip.title}
+                      </span>
+                      <span className="structure-tip-chevron" aria-hidden="true">
+                        ⌄
+                      </span>
+                    </summary>
+                    <p className="structure-tip-body">{tip.body}</p>
+                    {tip.example ? (
+                      <div className="structure-tip-example">
+                        <span>Try saying</span>
+                        <p>“{tip.example}”</p>
+                      </div>
+                    ) : null}
+                  </details>
+                );
+              }}
+            />
+          </>
+        ) : null}
+
+        {activeTab === "words" ? (
+          <>
+            <p className="tab-summary-text">{analysis.vocabSummary}</p>
+            <div className="word-analysis-grid">
+              <WordListCard title="Weak Words" words={analysis.weakWords} tone="weak" />
+              <WordListCard title="Power Words" words={analysis.powerWords} tone="power" />
+            </div>
+            <SectionedTranscript
+              sentences={analysis.sentences}
+              timestamps={sentenceTimestamps}
+              pauseCount={analysis.pauseCount}
+              wordsPerMinute={analysis.wordsPerMinute}
+              transcriptText={transcript}
+              renderSentence={(sentence, key) => (
+                <div className="sentence-row plain" key={key}>
+                  {highlightWordsInSentence(sentence.text, taggedWords, key)}
+                </div>
+              )}
+            />
+          </>
+        ) : null}
+
+        {activeTab === "grammar" ? (
+          <>
+            <GrammarSummaryCard breakdown={analysis.grammarBreakdown} summary={analysis.grammarSummary} />
+            <SectionedTranscript
+              sentences={analysis.sentences}
+              timestamps={sentenceTimestamps}
+              pauseCount={analysis.pauseCount}
+              wordsPerMinute={analysis.wordsPerMinute}
+              transcriptText={transcript}
+              renderSentence={(sentence, key) => (
+                <FlaggedSentence sentence={sentence} keyId={key} openKey={openKey} setOpenKey={setOpenKey} grammarOnly />
+              )}
+            />
+          </>
+        ) : null}
+      </div>
+
+      {transcript ? (
+        <details className="transcript-disclosure">
+          <summary>Full plain-text transcript</summary>
+          <p>{transcript}</p>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+const VAULT_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatVaultDate(iso: string) {
+  const date = new Date(iso);
+  return `${VAULT_MONTH_ABBR[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+function formatVaultDuration(seconds: number | null) {
+  if (seconds == null) return "—";
+  return `${Math.round(seconds)}s`;
+}
+
+function VaultCard({
+  recording,
+  roundNumber,
+  onOpen,
+}: {
+  recording: VaultRecording;
+  roundNumber: number;
+  onOpen: (recording: VaultRecording) => void;
+}) {
+  const hasAnalysis = Boolean(recording.analysis);
+  const content = (
+    <>
+      <div className="vault-card-head">
+        <span className="vault-badge">Round {roundNumber}</span>
+        <span className="vault-date">{formatVaultDate(recording.created_at)}</span>
+      </div>
+      <p className="vault-prompt">{recording.prompt}</p>
+      <div className="vault-card-foot">
+        <span className="vault-duration">{formatVaultDuration(recording.duration_seconds)}</span>
+        {hasAnalysis ? (
+          <span className="vault-analysis-pill">
+            <SparkleIcon /> Analysis
+          </span>
+        ) : (
+          <span className="vault-analysis-pending">No analysis</span>
+        )}
+      </div>
+    </>
+  );
+
+  if (!hasAnalysis) {
+    return <div className="vault-card disabled">{content}</div>;
+  }
+
+  return (
+    <button type="button" className="vault-card" onClick={() => onOpen(recording)}>
+      {content}
+    </button>
+  );
+}
+
 export default function SpeechBrigade() {
   const audio = useAudio();
-  const [screen, setScreen] = useState<Screen>("landing");
+  const [screen, setScreen] = useState<Screen>("vaultAnalysis");
   const [round, setRound] = useState<RoundState>(initialRound);
   const [allocationIndex, setAllocationIndex] = useState(2);
   const [themeDisplay, setThemeDisplay] = useState("READY");
@@ -665,8 +1608,151 @@ export default function SpeechBrigade() {
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [lockedChoice, setLockedChoice] = useState("");
 
+  const [session, setSession] = useState<Session | null>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authStatus, setAuthStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [authError, setAuthError] = useState("");
+  const [analyzingStage, setAnalyzingStage] = useState<AnalyzingStage>("uploading");
+  const [recordingError, setRecordingError] = useState("");
+  const [vaultRecordings, setVaultRecordings] = useState<VaultRecording[]>([]);
+  const [vaultLoading, setVaultLoading] = useState(false);
+  const [vaultError, setVaultError] = useState("");
+  const [activeVaultAnalysis, setActiveVaultAnalysis] = useState<{
+    analysis: AnalysisResult;
+    transcript: string;
+    transcriptData: TranscriptData | null;
+    audioUrl: string;
+    mode: EventMode;
+  } | null>({
+    mode: "impromptu",
+    analysis: {
+      topic: "Laughter",
+      scorecard: { stars: 2, title: "Needs real polish", description: "Test." },
+      sentences: [
+        { tip: null, text: "Laughter is the best medicine.", example: null, section: "opening", weakAxis: null, errorSpan: null, grammarSubcategory: null },
+        { tip: "t", text: "Laughter.", example: "e", section: "opening", weakAxis: "delivery", errorSpan: null, grammarSubcategory: null },
+        { tip: "t", text: "Laughter.", example: "e", section: "opening", weakAxis: "delivery", errorSpan: null, grammarSubcategory: null },
+        { tip: "t", text: "Laughter.", example: "e", section: "opening", weakAxis: "delivery", errorSpan: null, grammarSubcategory: null },
+        { tip: "t", text: "Laughter is the best medicine because laughter is oftentimes to be said what is the most necessary for people when they are in pain either mentally or physically.", example: "e", section: "body", weakAxis: "grammar", errorSpan: "is oftentimes to be said what is the most necessary", grammarSubcategory: ["wordUsage"] },
+        { tip: "t", text: "It's very important to have laughter so that you are able to see the light of the situation.", example: "e", section: "body", weakAxis: "vocab", errorSpan: null, grammarSubcategory: null },
+        { tip: "t", text: "People who are humorous usually live longer.", example: "e", section: "body", weakAxis: "analysis", errorSpan: null, grammarSubcategory: null },
+        { tip: null, text: "If you're able to laugh at your own situation, then that means you're not taking yourself too seriously.", example: null, section: "body", weakAxis: null, errorSpan: null, grammarSubcategory: null },
+        { tip: "t", text: "You see that there it's not the end of the world if something bad happened to you.", example: "e", section: "closing", weakAxis: "grammar", errorSpan: "that there it's not the end of the world if something bad happened", grammarSubcategory: ["verbTense"] },
+      ],
+      weakWords: [],
+      categories: {
+        analysis: { stars: 1, takeaway: "t" },
+        delivery: { stars: 2, takeaway: "t" },
+        organization: { stars: 2, takeaway: "t" },
+      },
+      pauseCount: 8,
+      powerWords: [],
+      fillerCount: 0,
+      sectionTips: {
+        body: { body: "b", title: "t", example: "e" },
+        closing: { body: "b", title: "t", example: "e" },
+        opening: { body: "b", title: "t", example: "e" },
+      },
+      vocabSummary: "v",
+      yourStructure: { body: 75, closing: 17, opening: 8 },
+      grammarSummary: "g",
+      idealStructure: { body: 70, closing: 15, opening: 15 },
+      keyTakeawayTip: "k",
+      wordsPerMinute: 107,
+      grammarBreakdown: { agreement: 0, verbTense: 1, wordUsage: 1, sentenceStructure: 2 },
+    },
+    transcript:
+      "Laughter is the best medicine. Laughter. Laughter. Laughter. Laughter is the best medicine because laughter is oftentimes to be said what is the most necessary for people when they are in pain either mentally or physically. It's very important to have laughter so that you are able to see the light of the situation. People who are humorous usually live longer. If you're able to laugh at your own situation, then that means you're not taking yourself too seriously. You see that there it's not the end of the world if something bad happened to you.",
+    transcriptData: {
+      paragraphs: [
+        {
+          sentences: [
+            { end: 5.44, text: "Laughter is the best medicine.", start: 2.3999999 },
+            { end: 7.12, text: "Laughter.", start: 6.56 },
+            { end: 7.52, text: "Laughter.", start: 7.12 },
+            { end: 8.16, text: "Laughter.", start: 7.52 },
+            { end: 28.064999, text: "Laughter is the best medicine because laughter is oftentimes to be said what is the most necessary for people when they are in pain either mentally or physically.", start: 8.559999 },
+          ],
+        },
+        {
+          sentences: [
+            { end: 36.91, text: "It's very important to have laughter so that you are able to see the light of the situation.", start: 28.99 },
+            { end: 41.39, text: "People who are humorous usually live longer.", start: 38.75 },
+            { end: 48.545, text: "If you're able to laugh at your own situation, then that means you're not taking yourself too seriously.", start: 42.704998 },
+            { end: 53.425, text: "You see that there it's not the end of the world if something bad happened to you.", start: 49.664997 },
+          ],
+        },
+      ],
+    },
+    audioUrl: "",
+  });
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+    return () => subscription.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (screen === "eventsAuth" && session) {
+      setScreen("events");
+    }
+    if (screen === "signIn" && session) {
+      setScreen("settings");
+    }
+  }, [screen, session]);
+
+  useEffect(() => {
+    if (screen === "impromptuDelivery" || screen === "extempDelivery") {
+      void startRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
+
+  useEffect(() => {
+    if (screen !== "settings" || !session) return undefined;
+    let cancelled = false;
+    setVaultLoading(true);
+    setVaultError("");
+    supabase
+      .from("recordings")
+      .select("id, prompt, mode, duration_seconds, transcript, transcript_data, audio_url, analysis, created_at")
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setVaultError(error.message);
+          setVaultRecordings([]);
+        } else {
+          setVaultRecordings((data || []) as VaultRecording[]);
+        }
+        setVaultLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, session]);
+
+  const openVaultAnalysis = (recording: VaultRecording) => {
+    if (!recording.analysis) return;
+    setActiveVaultAnalysis({
+      analysis: recording.analysis,
+      transcript: recording.transcript || "",
+      transcriptData: recording.transcript_data || null,
+      audioUrl: recording.audio_url || "",
+      mode: recording.mode,
+    });
+    setScreen("vaultAnalysis");
+  };
+
   const modeLabel = round.mode === "impromptu" ? "Impromptu Speaking" : round.mode === "extemp" ? "Extemporaneous Speaking" : "";
-  const isDarkPhase = ["topicSelect", "impromptuPrep", "deliveryCountdown", "impromptuDelivery", "questionSelect", "extempPrep", "extempDelivery", "results"].includes(screen);
+  const isDarkPhase = ["topicSelect", "impromptuPrep", "deliveryCountdown", "impromptuDelivery", "analyzing", "questionSelect", "extempPrep", "extempDelivery", "results", "vaultAnalysis"].includes(screen);
 
   const setAllocatedTime = (index: number) => {
     const picked = allocationOptions[index];
@@ -685,6 +1771,7 @@ export default function SpeechBrigade() {
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setActiveSlot(null);
     setLockedChoice("");
+    setRecordingError("");
   };
 
   const startMode = (mode: EventMode) => {
@@ -694,7 +1781,142 @@ export default function SpeechBrigade() {
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setActiveSlot(null);
     setLockedChoice("");
+    setRecordingError("");
     setScreen(mode === "impromptu" ? "impromptuIntro" : "extempIntro");
+  };
+
+  const sendMagicLink = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!authEmail.trim()) return;
+    setAuthStatus("sending");
+    setAuthError("");
+    const { error } = await supabase.auth.signInWithOtp({
+      email: authEmail.trim(),
+      options: {
+        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+      },
+    });
+    if (error) {
+      setAuthStatus("error");
+      setAuthError(error.message);
+      return;
+    }
+    setAuthStatus("sent");
+  };
+
+  const RECORDING_MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+
+  const startRecording = async () => {
+    setRecordingError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = RECORDING_MIME_CANDIDATES.find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+    } catch (err) {
+      setRecordingError(
+        err instanceof Error ? err.message : "Microphone access was denied. Analysis will be skipped for this round.",
+      );
+    }
+  };
+
+  const stopRecording = (): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      const recorder = mediaRecorderRef.current;
+      const stream = mediaStreamRef.current;
+      if (!recorder) {
+        resolve(null);
+        return;
+      }
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        stream?.getTracks().forEach((track) => track.stop());
+        mediaRecorderRef.current = null;
+        mediaStreamRef.current = null;
+        resolve(blob.size > 0 ? blob : null);
+      };
+      if (recorder.state !== "inactive") recorder.stop();
+      else resolve(null);
+    });
+  };
+
+  const runAnalysisPipeline = async (blob: Blob, mode: EventMode, topic: string, durationSeconds: number) => {
+    try {
+      const {
+        data: { session: activeSession },
+      } = await supabase.auth.getSession();
+      if (!activeSession) throw new Error("You need to be signed in to analyze a recording.");
+      const token = activeSession.access_token;
+      const userId = activeSession.user.id;
+
+      setAnalyzingStage("uploading");
+      const extension = blob.type.includes("mp4") ? "m4a" : "webm";
+      const path = `${userId}/${Date.now()}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from("impromptu-recordings")
+        .upload(path, blob, { contentType: blob.type || "audio/webm" });
+      if (uploadError) throw uploadError;
+      const { data: publicUrlData } = supabase.storage.from("impromptu-recordings").getPublicUrl(path);
+      const audioUrl = publicUrlData.publicUrl;
+
+      setAnalyzingStage("transcribing");
+      const form = new FormData();
+      form.append("audio", blob, `recording.${extension}`);
+      const transcribeRes = await fetch(`${supabaseUrl}/functions/v1/transcribe`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const transcribeBody = await transcribeRes.json();
+      if (!transcribeRes.ok) throw new Error(transcribeBody.error || "Transcription failed");
+      const { transcript, transcriptData } = transcribeBody;
+
+      const { data: recordingRow, error: insertError } = await supabase
+        .from("recordings")
+        .insert({
+          user_id: userId,
+          mode,
+          prompt: topic,
+          transcript,
+          transcript_data: transcriptData,
+          duration_seconds: durationSeconds,
+          audio_url: audioUrl,
+        })
+        .select("id")
+        .single();
+      if (insertError) throw insertError;
+
+      setAnalyzingStage("analyzing");
+      const analyzeRes = await fetch(`${supabaseUrl}/functions/v1/analyze-speech`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ recordingId: recordingRow.id }),
+      });
+      const analyzeBody = await analyzeRes.json();
+      if (!analyzeRes.ok) throw new Error(analyzeBody.error || "Analysis failed");
+
+      setRound((current) => ({
+        ...current,
+        analysis: analyzeBody.analysis,
+        analysisTranscript: transcript,
+        analysisTranscriptData: transcriptData || null,
+        analysisAudioUrl: audioUrl,
+        analysisError: null,
+      }));
+    } catch (err) {
+      setRound((current) => ({
+        ...current,
+        analysisError: err instanceof Error ? err.message : "Analysis failed. Please try again.",
+      }));
+    } finally {
+      setScreen("results");
+    }
   };
 
   const practiceAgain = () => {
@@ -803,8 +2025,27 @@ export default function SpeechBrigade() {
   };
 
   const handleDeliveryComplete = (elapsed: number) => {
-    setRound((current) => ({ ...current, deliverySecondsUsed: Math.round(elapsed) }));
-    setScreen("results");
+    const roundedElapsed = Math.round(elapsed);
+    setRound((current) => ({ ...current, deliverySecondsUsed: roundedElapsed }));
+    const mode = round.mode;
+    if (!mode) {
+      setScreen("results");
+      return;
+    }
+    const topic = mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
+    stopRecording().then((blob) => {
+      if (!blob) {
+        setRound((current) => ({
+          ...current,
+          analysisError: recordingError || "No recording was captured, so analysis is unavailable.",
+        }));
+        setScreen("results");
+        return;
+      }
+      setAnalyzingStage("uploading");
+      setScreen("analyzing");
+      void runAnalysisPipeline(blob, mode, topic, roundedElapsed);
+    });
   };
 
   const warningTone = (second: number) => audio.countdown(second === 0);
@@ -829,7 +2070,11 @@ export default function SpeechBrigade() {
                 <span>Table Topic Mode</span>
                 <small>Coming soon</small>
               </button>
-              <button className="primary-card" type="button" onClick={() => setScreen("events")}>
+              <button
+                className="primary-card"
+                type="button"
+                onClick={() => setScreen(session ? "events" : "eventsAuth")}
+              >
                 <span>National Speech & Debate Association Mode</span>
                 <small>Impromptu and Extemp rounds</small>
               </button>
@@ -851,6 +2096,128 @@ export default function SpeechBrigade() {
                 <small>Think quickly. Speak clearly.</small>
               </button>
             </div>
+          </section>
+        );
+      case "eventsAuth":
+        return (
+          <section className="narrow auth-screen">
+            <p className="eyebrow">Sign in to continue</p>
+            <h1>Sign in to your account</h1>
+            <p className="lede">
+              Sign in to your account, or sign up for a new one, to start a National Speech & Debate Association
+              practice round.
+            </p>
+            {authStatus === "sent" ? (
+              <div className="auth-sent">
+                <p>
+                  Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here,
+                  signed in.
+                </p>
+                <button className="secondary" type="button" onClick={() => setAuthStatus("idle")}>
+                  Use a different email
+                </button>
+              </div>
+            ) : (
+              <form className="auth-form" onSubmit={sendMagicLink}>
+                <input
+                  type="email"
+                  required
+                  placeholder="you@school.edu"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  aria-label="Email address"
+                />
+                <button className="primary" type="submit" disabled={authStatus === "sending"}>
+                  {authStatus === "sending" ? "Sending…" : "Email me a magic link"}
+                </button>
+                {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
+              </form>
+            )}
+            <button className="secondary" type="button" onClick={goHome}>
+              Back
+            </button>
+          </section>
+        );
+      case "signIn":
+        return (
+          <section className="narrow auth-screen">
+            <p className="eyebrow">Sign in</p>
+            <h1>Sign in to Speech Brigade</h1>
+            <p className="lede">
+              Sign in with your email to save your recordings and access your account.
+            </p>
+            {authStatus === "sent" ? (
+              <div className="auth-sent">
+                <p>
+                  Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here,
+                  signed in.
+                </p>
+                <button className="secondary" type="button" onClick={() => setAuthStatus("idle")}>
+                  Use a different email
+                </button>
+              </div>
+            ) : (
+              <form className="auth-form" onSubmit={sendMagicLink}>
+                <input
+                  type="email"
+                  required
+                  placeholder="you@school.edu"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  aria-label="Email address"
+                />
+                <button className="primary" type="submit" disabled={authStatus === "sending"}>
+                  {authStatus === "sending" ? "Sending…" : "Email me a magic link"}
+                </button>
+                {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
+              </form>
+            )}
+            <button className="secondary" type="button" onClick={goHome}>
+              Back
+            </button>
+          </section>
+        );
+      case "settings":
+        return (
+          <section className="narrow auth-screen">
+            <p className="eyebrow">Settings</p>
+            <h1>Your account</h1>
+            {session ? (
+              <p className="lede">
+                You&apos;re signed in as <strong>{session.user.email}</strong>.
+              </p>
+            ) : (
+              <p className="lede">You&apos;re not signed in.</p>
+            )}
+            <button className="secondary" type="button" onClick={goHome}>
+              Back
+            </button>
+
+            {session ? (
+              <div className="vault-section">
+                <h2 className="vault-heading">
+                  Your <em>vault</em>
+                </h2>
+                {vaultLoading ? (
+                  <p className="vault-status">Loading your recordings…</p>
+                ) : vaultError ? (
+                  <p className="vault-status error">{vaultError}</p>
+                ) : vaultRecordings.length === 0 ? (
+                  <p className="vault-status">No recordings yet — complete a round to see it here.</p>
+                ) : (
+                  <div className="vault-list">
+                    {vaultRecordings.map((recording, index) => (
+                      <VaultCard
+                        key={recording.id}
+                        recording={recording}
+                        roundNumber={vaultRecordings.length - index}
+                        onOpen={openVaultAnalysis}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </section>
         );
       case "impromptuIntro":
@@ -971,15 +2338,39 @@ export default function SpeechBrigade() {
         );
       case "impromptuDelivery":
         return (
-          <TimerPanel
-            label="Delivery"
-            seconds={round.deliverySecondsAllocated}
-            buttonLabel="I'm done"
-            topic={round.selectedTopic}
-            timerKey={`impromptu-delivery-${round.selectedTopic}`}
-            onComplete={handleDeliveryComplete}
-            onWarningSecond={warningTone}
-          />
+          <>
+            {recordingError ? (
+              <p className="recording-notice error">Microphone unavailable — this round won&apos;t be scored.</p>
+            ) : (
+              <p className="recording-notice">
+                <span className="record-dot" />
+                Recording
+              </p>
+            )}
+            <TimerPanel
+              label="Delivery"
+              seconds={round.deliverySecondsAllocated}
+              buttonLabel="I'm done"
+              topic={round.selectedTopic}
+              timerKey={`impromptu-delivery-${round.selectedTopic}`}
+              onComplete={handleDeliveryComplete}
+              onWarningSecond={warningTone}
+            />
+          </>
+        );
+      case "analyzing":
+        return (
+          <section className="countdown-screen analyzing-screen">
+            <div className="analyzing-spinner" />
+            <p>Scoring your speech</p>
+            <h1>
+              {analyzingStage === "uploading"
+                ? "Saving your recording…"
+                : analyzingStage === "transcribing"
+                  ? "Transcribing your speech…"
+                  : "Analyzing with AI…"}
+            </h1>
+          </section>
         );
       case "extempIntro":
         return (
@@ -1035,17 +2426,48 @@ export default function SpeechBrigade() {
         );
       case "extempDelivery":
         return (
-          <TimerPanel
-            label="Delivery"
-            seconds={420}
-            buttonLabel="I'm done"
-            topic={selectedPrompt}
-            timerKey={`extemp-delivery-${selectedPrompt}`}
-            onComplete={handleDeliveryComplete}
-            onWarningSecond={warningTone}
-          />
+          <>
+            {recordingError ? (
+              <p className="recording-notice error">Microphone unavailable — this round won&apos;t be scored.</p>
+            ) : (
+              <p className="recording-notice">
+                <span className="record-dot" />
+                Recording
+              </p>
+            )}
+            <TimerPanel
+              label="Delivery"
+              seconds={420}
+              buttonLabel="I'm done"
+              topic={selectedPrompt}
+              timerKey={`extemp-delivery-${selectedPrompt}`}
+              onComplete={handleDeliveryComplete}
+              onWarningSecond={warningTone}
+            />
+          </>
         );
       case "results":
+        if (round.mode && round.analysis) {
+          return (
+            <section className="results">
+              <button type="button" className="back-link" onClick={() => setScreen("events")}>
+                ← Back to events
+              </button>
+              <ScorecardPanel
+                analysis={round.analysis}
+                transcript={round.analysisTranscript}
+                transcriptData={round.analysisTranscriptData}
+                audioUrl={round.analysisAudioUrl}
+                theme={round.mode === "impromptu" ? round.impromptuTheme : round.selectedQuestion?.category || ""}
+                mode={round.mode}
+              />
+              <div className="button-row">
+                <button className="primary" type="button" onClick={practiceAgain}>Practice Again</button>
+                <button className="secondary" type="button" onClick={() => setScreen("events")}>Back to Events</button>
+              </div>
+            </section>
+          );
+        }
         return (
           <section className="results">
             <p className="eyebrow">Round complete</p>
@@ -1070,16 +2492,69 @@ export default function SpeechBrigade() {
               <SummaryRow label="Preparation used" value={formatTime(round.prepSecondsUsed)} />
               <SummaryRow label="Delivery used" value={formatTime(round.deliverySecondsUsed)} />
             </div>
+
+            {round.analysisError ? (
+              <div className="analysis-error-card">
+                <span className="eyebrow">Analysis unavailable</span>
+                <p>{round.analysisError}</p>
+              </div>
+            ) : null}
+
             <div className="button-row">
               <button className="primary" type="button" onClick={practiceAgain}>Practice Again</button>
               <button className="secondary" type="button" onClick={() => setScreen("events")}>Back to Events</button>
             </div>
           </section>
         );
+      case "vaultAnalysis":
+        if (!activeVaultAnalysis) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No recording selected</p>
+              <button className="secondary" type="button" onClick={() => setScreen("settings")}>
+                Back to your vault
+              </button>
+            </section>
+          );
+        }
+        return (
+          <section className="results">
+            <button type="button" className="back-link" onClick={() => setScreen("settings")}>
+              ← Back to your vault
+            </button>
+            <ScorecardPanel
+              analysis={activeVaultAnalysis.analysis}
+              transcript={activeVaultAnalysis.transcript}
+              transcriptData={activeVaultAnalysis.transcriptData}
+              audioUrl={activeVaultAnalysis.audioUrl}
+              theme=""
+              mode={activeVaultAnalysis.mode}
+            />
+          </section>
+        );
       default:
         return null;
     }
-  }, [screen, round, allocationIndex, activeSlot, slotItems, lockedChoice, themeDisplay, themeSpinning]);
+  }, [
+    screen,
+    round,
+    allocationIndex,
+    activeSlot,
+    slotItems,
+    lockedChoice,
+    themeDisplay,
+    themeSpinning,
+    session,
+    authEmail,
+    authStatus,
+    authError,
+    analyzingStage,
+    recordingError,
+    vaultRecordings,
+    vaultLoading,
+    vaultError,
+    activeVaultAnalysis,
+  ]);
 
   return (
     <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`} onPointerDownCapture={playInteractionSound}>
@@ -1088,15 +2563,34 @@ export default function SpeechBrigade() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
       <div className="ambient" aria-hidden="true" />
-      {screen !== "landing" ? (
-        <header className="app-header">
-          <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
-            <span>Speech</span> Brigade
+      <header className="app-header">
+        {screen === "landing" ? (
+          <>
+            <div />
+            <div />
+          </>
+        ) : (
+          <>
+            <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
+              <span>Speech</span> Brigade
+            </button>
+            <div>{modeLabel}</div>
+          </>
+        )}
+        {session ? (
+          <button className="home-button" type="button" onClick={() => setScreen("settings")}>
+            Settings
           </button>
-          <div>{modeLabel}</div>
-          <button className="home-button" type="button" onClick={goHome}>Home</button>
-        </header>
-      ) : null}
+        ) : (
+          <button
+            className="home-button"
+            type="button"
+            onClick={() => setScreen("signIn")}
+          >
+            {screen === "landing" ? "Sign Up" : "Sign In"}
+          </button>
+        )}
+      </header>
       <div className="screen-frame" key={screen}>
         {content}
       </div>
