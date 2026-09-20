@@ -147,7 +147,7 @@ interface VaultRecording {
 }
 
 
-type AnalyzingStage = "uploading" | "transcribing" | "analyzing";
+type AnalyzingStage = "uploading" | "transcribing" | "analyzing" | "done";
 
 type ThemeBank = { theme: string; topics: string[] };
 type ExtempQuestion = { category: string; question: string };
@@ -2334,13 +2334,47 @@ function formatAnalysisModeLabel(mode: AnalysisMode) {
   return eventConfig ? `${eventConfig.name} (${eventConfig.acronym})` : "Practice round";
 }
 
+const ANALYZING_STAGE_RANGES: Record<Exclude<AnalyzingStage, "done">, [number, number]> = {
+  uploading: [0, 20],
+  transcribing: [20, 55],
+  analyzing: [55, 95],
+};
+
+function AnalyzingProgress({ stage, saveOnly }: { stage: AnalyzingStage; saveOnly: boolean }) {
+  const [percent, setPercent] = useState(0);
+
+  useEffect(() => {
+    if (stage === "done") {
+      setPercent(100);
+      return undefined;
+    }
+    const [floor, ceiling] = saveOnly ? [0, 95] : ANALYZING_STAGE_RANGES[stage];
+    setPercent((current) => Math.max(current, floor));
+    const timer = window.setInterval(() => {
+      setPercent((current) => {
+        if (current >= ceiling) return current;
+        return Math.min(ceiling, current + Math.max(0.15, (ceiling - current) * 0.04));
+      });
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [stage, saveOnly]);
+
+  const rounded = Math.round(percent);
+  return (
+    <div className="analyzing-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rounded}>
+      <div className="analyzing-progress-track">
+        <div className="analyzing-progress-fill" style={{ width: `${percent}%` }} />
+      </div>
+      <span className="analyzing-progress-label">{rounded}%</span>
+    </div>
+  );
+}
+
 function VaultCard({
   recording,
-  roundNumber,
   onOpen,
 }: {
   recording: VaultRecording;
-  roundNumber: number;
   onOpen: (recording: VaultRecording) => void;
 }) {
   const hasAnalysis = Boolean(recording.analysis);
@@ -2349,7 +2383,7 @@ function VaultCard({
   const content = (
     <>
       <div className="vault-card-head">
-        <span className="vault-badge">Round {roundNumber}</span>
+        <span className="vault-badge">{formatAnalysisModeLabel(recording.mode)}</span>
         <span className="vault-date">{formatVaultDate(recording.created_at)}</span>
       </div>
       <p className="vault-prompt">{recording.prompt}</p>
@@ -2709,6 +2743,30 @@ export default function SpeechBrigade() {
     setAuthStatus("sent");
   };
 
+  const signOut = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+  };
+
+  const signInWithGoogle = async () => {
+    if (!supabase) {
+      setAuthStatus("error");
+      setAuthError("Supabase is not configured for this local preview.");
+      return;
+    }
+    setAuthError("");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+      },
+    });
+    if (error) {
+      setAuthStatus("error");
+      setAuthError(error.message);
+    }
+  };
+
   const RECORDING_MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 
 	  const startRecording = async () => {
@@ -2834,6 +2892,8 @@ export default function SpeechBrigade() {
 	      if (insertError) throw insertError;
 
 	      setRound((current) => ({ ...current, analysisError: null }));
+	      setAnalyzingStage("done");
+	      await new Promise((resolve) => setTimeout(resolve, 450));
 	    } catch (err) {
 	      const message = err instanceof Error ? err.message : "Recording could not be saved. Please try again.";
 	      options?.onError?.(message);
@@ -2937,6 +2997,8 @@ export default function SpeechBrigade() {
 	        temporaryRecordingId = null;
 	        temporaryPath = null;
 	      }
+	      setAnalyzingStage("done");
+	      await new Promise((resolve) => setTimeout(resolve, 450));
 	    } catch (err) {
 	      const message = err instanceof Error ? err.message : "Analysis failed. Please try again.";
 	      options?.onError?.(message);
@@ -3745,33 +3807,11 @@ export default function SpeechBrigade() {
               <button className="primary" type="button" onClick={() => setScreen("events")}>
                 Continue to Events
               </button>
-            ) : null}
-            {isSupabaseConfigured && authStatus === "sent" ? (
-              <div className="auth-sent">
-                <p>
-                  Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here,
-                  signed in.
-                </p>
-                <button className="secondary" type="button" onClick={() => setAuthStatus("idle")}>
-                  Use a different email
-                </button>
-              </div>
-            ) : isSupabaseConfigured ? (
-              <form className="auth-form" onSubmit={sendMagicLink}>
-                <input
-                  type="email"
-                  required
-                  placeholder="you@school.edu"
-                  value={authEmail}
-                  onChange={(event) => setAuthEmail(event.target.value)}
-                  aria-label="Email address"
-                />
-                <button className="primary" type="submit" disabled={authStatus === "sending"}>
-                  {authStatus === "sending" ? "Sending…" : "Email me a magic link"}
-                </button>
-                {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
-              </form>
-            ) : null}
+            ) : (
+              <button className="primary" type="button" onClick={() => setScreen("signIn")}>
+                Sign In
+              </button>
+            )}
             <button className="secondary" type="button" onClick={goHome}>
               Back
             </button>
@@ -3779,13 +3819,26 @@ export default function SpeechBrigade() {
         );
       case "signIn":
         return (
-          <section className="narrow auth-screen">
-            <p className="eyebrow">{isSupabaseConfigured ? "Sign in" : "Local preview"}</p>
-            <h1>{isSupabaseConfigured ? "Sign in to Speech Brigade" : "Account features are disabled locally"}</h1>
+          <section className="narrow auth-screen sign-in-screen">
+            <h1 className="sign-in-heading">
+              {!isSupabaseConfigured ? (
+                "Practice mode is available"
+              ) : authStatus === "sent" ? (
+                <>
+                  Check your <em>email</em>
+                </>
+              ) : (
+                <>
+                  Welcome <em>back</em>
+                </>
+              )}
+            </h1>
             <p className="lede">
-              {isSupabaseConfigured
-                ? "Sign in with your email to save your recordings and access your account."
-                : "Add Supabase environment variables to enable sign-in, saved recordings, transcription, and speech analysis."}
+              {!isSupabaseConfigured
+                ? "Add Supabase environment variables to enable sign-in, saved recordings, transcription, and speech analysis."
+                : authStatus === "sent"
+                  ? "We sent you a sign-in link."
+                  : "Sign in to continue your challenge."}
             </p>
             {!isSupabaseConfigured ? (
               <button className="primary" type="button" onClick={() => setScreen("events")}>
@@ -3802,20 +3855,49 @@ export default function SpeechBrigade() {
                 </button>
               </div>
             ) : (
-              <form className="auth-form" onSubmit={sendMagicLink}>
-                <input
-                  type="email"
-                  required
-                  placeholder="you@school.edu"
-                  value={authEmail}
-                  onChange={(event) => setAuthEmail(event.target.value)}
-                  aria-label="Email address"
-                />
-                <button className="primary" type="submit" disabled={authStatus === "sending"}>
-                  {authStatus === "sending" ? "Sending…" : "Email me a magic link"}
+              <>
+                <button className="google-signin-button" type="button" onClick={signInWithGoogle}>
+                  <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62Z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 0 0 9 18Z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.98A9 9 0 0 0 0 9c0 1.45.35 2.83.98 4.03l2.97-2.33Z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .98 4.97l2.97 2.33C4.66 5.17 6.65 3.58 9 3.58Z"
+                    />
+                  </svg>
+                  Continue with Google
                 </button>
-                {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
-              </form>
+                <div className="auth-divider">
+                  <span>or</span>
+                </div>
+                <form className="auth-form" onSubmit={sendMagicLink}>
+                  <div className="auth-field">
+                    <label htmlFor="auth-email">Email</label>
+                    <input
+                      id="auth-email"
+                      type="email"
+                      required
+                      placeholder="you@example.com"
+                      value={authEmail}
+                      onChange={(event) => setAuthEmail(event.target.value)}
+                    />
+                  </div>
+                  <button className="auth-primary-button" type="submit" disabled={authStatus === "sending"}>
+                    {authStatus === "sending" ? "Sending…" : "Email me a magic link"}
+                  </button>
+                  {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
+                </form>
+              </>
             )}
             <button className="secondary" type="button" onClick={goHome}>
               Back
@@ -3836,6 +3918,11 @@ export default function SpeechBrigade() {
             ) : (
               <p className="lede">You&apos;re not signed in.</p>
             )}
+            {isSupabaseConfigured && session ? (
+              <button className="secondary" type="button" onClick={signOut}>
+                Sign Out
+              </button>
+            ) : null}
             <button className="secondary" type="button" onClick={goHome}>
               Back
             </button>
@@ -3865,13 +3952,8 @@ export default function SpeechBrigade() {
                   <p className="vault-status">No recordings yet — turn on Save recording before a round to see it here.</p>
                 ) : (
                   <div className="vault-list">
-                    {vaultRecordings.map((recording, index) => (
-                      <VaultCard
-                        key={recording.id}
-                        recording={recording}
-                        roundNumber={vaultRecordings.length - index}
-                        onOpen={openVaultAnalysis}
-                      />
+                    {vaultRecordings.map((recording) => (
+                      <VaultCard key={recording.id} recording={recording} onOpen={openVaultAnalysis} />
                     ))}
                   </div>
                 )}
@@ -4050,8 +4132,11 @@ export default function SpeechBrigade() {
 	                    : "Preparing your speech…"
 	                  : analyzingStage === "transcribing"
 	                    ? "Transcribing your speech…"
-	                    : "Analyzing…"}
+	                    : analyzingStage === "done"
+	                      ? "Done"
+	                      : "Analyzing…"}
             </h1>
+            <AnalyzingProgress stage={analyzingStage} saveOnly={!speechAnalysisEnabled} />
           </section>
         );
       case "extempIntro":
