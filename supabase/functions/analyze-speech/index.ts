@@ -70,7 +70,7 @@ const GEMINI_MODEL = 'gemini-3.6-flash'
 const MAX_ANALYSES_PER_DAY = 10
 const RATE_WINDOW_MS = 24 * 60 * 60 * 1000
 
-type EventMode = 'impromptu' | 'extemp'
+type EventMode = 'impromptu' | 'extemp' | 'oo' | 'inf' | 'di' | 'hi' | 'duo' | 'poi'
 // impromptu scores organization/analysis/delivery; extemp scores
 // argumentationAnalysis/sourceConsideration/delivery. Only 3 of these 5 keys
 // are ever populated on a given AnalysisResult, depending on mode.
@@ -142,6 +142,96 @@ interface AnalysisResult {
   yourStructure: { opening: number; body: number; closing: number }
   topic: string
   keyTakeawayTip: string
+}
+
+interface ScriptContext {
+  fileName: string
+  text: string
+}
+
+interface EventProfile {
+  name: string
+  context: string
+  organization: string
+  analysis: string
+  delivery: string
+  scriptUse: string
+  idealStructure: { opening: number; body: number; closing: number }
+}
+
+const EVENT_PROFILES: Record<EventMode, EventProfile> = {
+  impromptu: {
+    name: 'Impromptu Speaking',
+    context: 'The speaker drew a short topic and had very limited preparation time. Reward a clear thesis, quick organization, and thoughtful development under pressure.',
+    organization: 'Opening should interpret the prompt and preview a direction; body should develop a few coherent points; closing should return to the prompt with a complete final thought.',
+    analysis: 'Evaluate insight, specificity, explanation, examples, and how directly the speech answers or interprets the topic.',
+    delivery: 'Evaluate confidence, pace, vocal control, filler use, and clarity based only on the transcript and timing metrics.',
+    scriptUse: 'There is no script for this event.',
+    idealStructure: { opening: 18, body: 64, closing: 18 },
+  },
+  extemp: {
+    name: 'Extemporaneous Speaking',
+    context: 'The speaker answered a current-events question after preparation. Retain any USX or IX framing implied by the question.',
+    organization: 'Opening should answer the question directly and preview organized points; body should develop argument layers; closing should weigh the answer and implications.',
+    analysis: 'Evaluate direct answer, argument quality, current-events understanding, source integration, weighing, and responsiveness to the original question.',
+    delivery: 'Evaluate confident explanation, controlled pace, clarity, transitions, and reduced fillers based only on transcript and timing metrics.',
+    scriptUse: 'There is no script for this event. The original question is the central reference point.',
+    idealStructure: { opening: 16, body: 68, closing: 16 },
+  },
+  oo: {
+    name: 'Original Oratory',
+    context: 'The speaker is delivering an original persuasive or inspirational speech. Feedback should focus on performance, not document editing.',
+    organization: 'Opening should hook and frame the thesis; body should build a clear persuasive arc; closing should resolve the message with impact.',
+    analysis: 'Evaluate the central claim, reasoning, evidence/examples as spoken, rhetorical development, and audience connection.',
+    delivery: 'Evaluate vocal presence, emphasis, pacing, emotional variation, clarity, and whether the performance sounds memorized yet alive.',
+    scriptUse: 'If a script is provided, compare the transcript to it only for meaningful performance deviations: skipped key claims, reordered sections that hurt clarity, or wording changes that weaken impact. Do not grade the writing itself.',
+    idealStructure: { opening: 18, body: 66, closing: 16 },
+  },
+  inf: {
+    name: 'Informative Speaking',
+    context: 'The speaker is teaching an audience through an original informative presentation. Feedback should focus on performance and clarity.',
+    organization: 'Opening should establish curiosity and purpose; body should explain the topic in logical chunks; closing should reinforce the lesson or takeaway.',
+    analysis: 'Evaluate explanatory clarity, educational value, examples, definitions, audience understanding, and whether complex ideas become accessible.',
+    delivery: 'Evaluate vocal clarity, pacing, signposting, energy, emphasis, and whether the speaker sounds engaging rather than merely reading.',
+    scriptUse: 'If a script is provided, use it to identify meaningful performance deviations that affect clarity or missing explanations. Do not grade the document or visual-aid design.',
+    idealStructure: { opening: 18, body: 68, closing: 14 },
+  },
+  di: {
+    name: 'Dramatic Interpretation',
+    context: 'The performer is interpreting a dramatic selection. Never critique the source author’s writing; assess performance choices.',
+    organization: 'Opening should establish situation and emotional stakes; body should show progression of conflict or character; closing should land the dramatic moment.',
+    analysis: 'Evaluate interpretation of character, emotional arc, dramatic intent, transitions, and whether the performance reveals meaning in the selection.',
+    delivery: 'Evaluate vocal variety, pacing, emotional control, characterization, physical/vocal distinction as inferable, and dramatic commitment.',
+    scriptUse: 'If a script is provided, use it as a performance reference only: missed beats, unclear transitions, or deviations that affect character/story meaning. Do not grade the writing.',
+    idealStructure: { opening: 15, body: 72, closing: 13 },
+  },
+  hi: {
+    name: 'Humorous Interpretation',
+    context: 'The performer is interpreting humorous literature. Never critique the source writing; assess comedic performance choices.',
+    organization: 'Opening should establish premise and characters; body should escalate comedic situations; closing should resolve with a clear final beat.',
+    analysis: 'Evaluate comedic interpretation, character contrast, setup/payoff clarity, story cohesion, and whether humor supports the piece rather than becoming random.',
+    delivery: 'Evaluate timing, pacing, vocal distinction, energy, clarity, pauses, and control of comedic rhythm based on transcript and metrics.',
+    scriptUse: 'If a script is provided, use it as a performance reference for missed setups, weakened punchlines, or unclear character shifts. Do not grade the writing.',
+    idealStructure: { opening: 15, body: 72, closing: 13 },
+  },
+  duo: {
+    name: 'Duo Interpretation',
+    context: 'Two performers interpret a literary selection together. Transcript-only analysis may not reliably distinguish speakers, so focus on audible cohesion.',
+    organization: 'Opening should establish relationship and world; body should progress interactions clearly; closing should resolve the shared arc.',
+    analysis: 'Evaluate partner interaction as reflected in the transcript, character relationship, story clarity, shared pacing, transitions, and interpretive purpose.',
+    delivery: 'Evaluate timing, vocal contrast, rhythm, clarity, interruptions/overlaps if reflected in transcript, and coordinated energy.',
+    scriptUse: 'If a script is provided, use it as a performance reference for skipped exchanges, muddled transitions, or deviations that hurt shared storytelling. Do not grade the writing.',
+    idealStructure: { opening: 15, body: 72, closing: 13 },
+  },
+  poi: {
+    name: 'Program Oral Interpretation',
+    context: 'The performer combines multiple selections around a theme. Never critique the source writing; assess program performance and thematic clarity.',
+    organization: 'Opening should frame the theme; body should move between selections with purposeful progression; closing should synthesize the program’s message.',
+    analysis: 'Evaluate thematic development, selection interplay, transitions, interpretive choices, and whether the program feels unified.',
+    delivery: 'Evaluate vocal variety, pacing, transitions, characterization, emotional range, and clarity of shifts between selections.',
+    scriptUse: 'If a script is provided, use it as a performance reference for missing transitions, unclear source shifts, or deviations that weaken the program arc. Do not grade the writing.',
+    idealStructure: { opening: 16, body: 70, closing: 14 },
+  },
 }
 
 interface TranscriptDataWord {
@@ -217,7 +307,11 @@ async function handle(req: Request): Promise<Response> {
   if (userErr || !userData?.user) return json({ error: 'unauthorized' }, { status: 401 })
   const user = userData.user
 
-  let body: { recordingId?: string }
+  let body: {
+    recordingId?: string
+    eventMode?: unknown
+    scriptContext?: { fileName?: unknown; text?: unknown } | null
+  }
   try {
     body = await req.json()
   } catch {
@@ -238,7 +332,8 @@ async function handle(req: Request): Promise<Response> {
   if (!recording) return json({ error: 'recording not found' }, { status: 404 })
   if (recording.user_id !== user.id) return json({ error: 'forbidden' }, { status: 403 })
 
-  const mode: EventMode = recording.mode === 'extemp' ? 'extemp' : 'impromptu'
+  const mode = normalizeEventMode(body.eventMode) ?? normalizeEventMode(recording.mode) ?? 'impromptu'
+  const scriptContext = normalizeScriptContext(body.scriptContext)
   const prompt = String(recording.prompt ?? '')
   const transcript = String(recording.transcript ?? '')
   const transcriptData = (recording.transcript_data ?? null) as TranscriptData | null
@@ -274,6 +369,7 @@ async function handle(req: Request): Promise<Response> {
       mode,
       prompt,
       transcript,
+      scriptContext,
       durationSeconds,
       fillerCount,
       pauseCount,
@@ -298,6 +394,22 @@ async function handle(req: Request): Promise<Response> {
 }
 
 const FILLER_REGEX = /\b(um+|uh+|er+|ah+|like|y'?know|you know|i mean|sort of|kind of|basically|literally|actually|so|well|right)\b/gi
+
+function normalizeEventMode(value: unknown): EventMode | null {
+  if (typeof value !== 'string') return null
+  return value in EVENT_PROFILES ? (value as EventMode) : null
+}
+
+function normalizeScriptContext(value: unknown): ScriptContext | null {
+  if (!value || typeof value !== 'object') return null
+  const fileName = 'fileName' in value && typeof value.fileName === 'string' ? value.fileName.trim() : ''
+  const text = 'text' in value && typeof value.text === 'string' ? value.text.replace(/\s+/g, ' ').trim() : ''
+  if (!fileName || !text) return null
+  return {
+    fileName: fileName.slice(0, 180),
+    text: text.slice(0, 28000),
+  }
+}
 
 function estimateFillerCount(transcript: string): number {
   const matches = transcript.match(FILLER_REGEX)
@@ -594,6 +706,7 @@ interface RunGeminiArgs {
   mode: EventMode
   prompt: string
   transcript: string
+  scriptContext: ScriptContext | null
   durationSeconds: number
   fillerCount: number
   pauseCount: number
@@ -602,17 +715,43 @@ interface RunGeminiArgs {
 }
 
 async function runGemini(args: RunGeminiArgs): Promise<AnalysisResult> {
-  const { apiKey, mode, prompt, transcript, durationSeconds, fillerCount, pauseCount, wordsPerMinute, totalWords } = args
+  const { apiKey, mode, prompt, transcript, scriptContext, durationSeconds, fillerCount, pauseCount, wordsPerMinute, totalWords } = args
 
-  const systemInstruction = mode === 'extemp' ? EXTEMP_SYSTEM_INSTRUCTION : IMPROMPTU_SYSTEM_INSTRUCTION
+  const profile = EVENT_PROFILES[mode]
+  const legacyInstruction = mode === 'extemp' ? EXTEMP_SYSTEM_INSTRUCTION : IMPROMPTU_SYSTEM_INSTRUCTION
+  const systemInstruction = `${legacyInstruction}
+
+EVENT-SPECIFIC OVERRIDE FOR THIS REQUEST:
+- Analyze this as ${profile.name}.
+- Return the categories object with EXACTLY these scored keys: "organization", "analysis", and "delivery". Do not use "argumentationAnalysis" or "sourceConsideration" in new output.
+- Organization means: ${profile.organization}
+- Analysis means: ${profile.analysis}
+- Delivery means: ${profile.delivery}
+- Context: ${profile.context}
+- Script/reference rule: ${profile.scriptUse}
+- The feedback is for a spoken performance. Do not provide standalone writing/document critique, and do not use writing-centric advice such as proofreading or revising a draft.
+- Use script material only as performance context. If no script is provided, do not penalize the speaker for practicing without one.
+- Keep all existing transcript, grammar, vocabulary, filler, pause, section, and sentence-tip features in the JSON shape.
+- Set idealStructure near opening ${profile.idealStructure.opening}%, body ${profile.idealStructure.body}%, closing ${profile.idealStructure.closing}%.`
 
   const userContent = `Prompt/topic the speaker was given: "${prompt}"
 
+Event: ${profile.name}
 Speech duration: ${durationSeconds.toFixed(1)} seconds
 Detected fillers: ${fillerCount}
 Detected pauses (>=0.6s gaps): ${pauseCount}
 Words per minute: ${wordsPerMinute}
 Total words: ${totalWords}
+${scriptContext ? `
+Optional script reference (${scriptContext.fileName}):
+"""
+${scriptContext.text}
+"""
+
+When comparing the transcript to the script, mention only meaningful performance differences that affect clarity, emphasis, structure, characterization, or impact. Do not report a raw similarity score.
+` : `
+No script reference was provided. Score the performance using the event rubric without penalizing the missing script.
+`}
 
 Transcript:
 """
@@ -662,9 +801,10 @@ ${transcript}
   }
 
   const rawCategories = (parsed.categories ?? {}) as Partial<Record<CategoryKey, Partial<CategoryResult>>>
-  const categoryKeys: CategoryKey[] = mode === 'extemp'
-    ? ['argumentationAnalysis', 'sourceConsideration', 'delivery']
-    : ['organization', 'analysis', 'delivery']
+  const standardCategoryKeys: CategoryKey[] = ['organization', 'analysis', 'delivery']
+  const legacyExtempCategoryKeys: CategoryKey[] = ['argumentationAnalysis', 'sourceConsideration', 'delivery']
+  const hasStandardCategories = standardCategoryKeys.some((key) => rawCategories[key])
+  const categoryKeys: CategoryKey[] = hasStandardCategories || mode !== 'extemp' ? standardCategoryKeys : legacyExtempCategoryKeys
   const categories: Partial<Record<CategoryKey, CategoryResult>> = {}
   for (const key of categoryKeys) {
     const raw = rawCategories[key] ?? {}
@@ -729,7 +869,7 @@ ${transcript}
     sectionTips,
     powerWords: Array.isArray(parsed.powerWords) ? parsed.powerWords.slice(0, 6) : [],
     weakWords: Array.isArray(parsed.weakWords) ? parsed.weakWords.slice(0, 6) : [],
-    idealStructure: parsed.idealStructure ?? { opening: 20, body: 60, closing: 20 },
+    idealStructure: parsed.idealStructure ?? profile.idealStructure,
     yourStructure,
     topic: typeof parsed.topic === 'string' ? parsed.topic : prompt,
     keyTakeawayTip:
