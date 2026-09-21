@@ -1532,15 +1532,60 @@ function RecordingPrivacyFooter() {
 
 function curveAnalysisStars(value: number) {
   const originalStars = Math.max(1, Math.min(5, Math.round(value)));
-  return originalStars === 5 ? 5 : 2.5 + originalStars * 0.5;
+  return 2 + originalStars * 0.5;
+}
+
+function isVirtuallyFlawlessAnalysis(analysis: AnalysisResult) {
+  const categoryValues = Object.values(analysis.categories).filter(Boolean);
+  const grammarIssues =
+    analysis.grammarBreakdown.agreement +
+    analysis.grammarBreakdown.verbTense +
+    analysis.grammarBreakdown.sentenceStructure +
+    analysis.grammarBreakdown.wordUsage;
+  return (
+    analysis.scorecard.stars >= 5 &&
+    categoryValues.length >= 3 &&
+    categoryValues.every((category) => (category?.stars ?? 0) >= 5) &&
+    grammarIssues === 0 &&
+    analysis.weakWords.length === 0 &&
+    analysis.fillerCount <= 1 &&
+    analysis.pauseCount <= 2 &&
+    analysis.wordsPerMinute >= 115 &&
+    analysis.wordsPerMinute <= 170
+  );
+}
+
+function displayScoreValue(value: number, perfect = false) {
+  const originalStars = Math.max(1, Math.min(5, Math.round(value)));
+  if (perfect && originalStars === 5) return 5;
+  return curveAnalysisStars(originalStars);
+}
+
+function countTranscriptWords(text: string) {
+  const matches = text.trim().match(/\b[\p{L}\p{N}][\p{L}\p{N}'-]*\b/gu);
+  return matches?.length ?? 0;
+}
+
+function isClearlyUnscorableSpeech(analysis: AnalysisResult, transcript: string) {
+  const wordCount = countTranscriptWords(transcript);
+  if (wordCount === 0) return true;
+  const analysisText = [
+    analysis.scorecard.title,
+    analysis.scorecard.description,
+    analysis.keyTakeawayTip,
+    analysis.grammarSummary,
+    analysis.vocabSummary,
+  ].join(" ");
+  const analysisSaysTooShort = /\b(too short|not enough|insufficient|cannot evaluate|can't evaluate|unable to evaluate|try speaking|full time|no meaningful)\b/i.test(analysisText);
+  return wordCount <= 12 || (wordCount < 20 && analysisSaysTooShort);
 }
 
 function formatStarValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function StarRating({ value }: { value: number }) {
-  const stars = curveAnalysisStars(value);
+function StarRating({ value, perfect = false }: { value: number; perfect?: boolean }) {
+  const stars = displayScoreValue(value, perfect);
   return (
     <span className="star-rating" aria-label={`${stars} out of 5 stars`}>
       {Array.from({ length: 5 }, (_, index) => (
@@ -1897,9 +1942,11 @@ function highlightWordsInSentence(text: string, taggedWords: TaggedWord[], idPre
 function CategoryAccordion({
   categories,
   categoryKeys,
+  scoresUnavailable = false,
 }: {
   categories: Partial<Record<CategoryKey, CategoryResult>>;
   categoryKeys: CategoryKey[];
+  scoresUnavailable?: boolean;
 }) {
   const [openKey, setOpenKey] = useState<CategoryKey | null>(categoryKeys[0] ?? null);
   return (
@@ -1917,7 +1964,7 @@ function CategoryAccordion({
               onClick={() => setOpenKey(isOpen ? null : key)}
             >
               <span className={`accordion-label ${key}`}>{categoryLabels[key]}</span>
-              <StarRating value={result.stars} />
+              {scoresUnavailable ? <span className="score-na">N/A</span> : <StarRating value={result.stars} />}
               <span className="accordion-chevron" aria-hidden="true">⌄</span>
             </button>
             {isOpen ? <p className="accordion-body">{result.takeaway}</p> : null}
@@ -2151,14 +2198,22 @@ function ScorecardPanel({
   ];
 
   const sentenceTimestamps = alignSentenceTimestamps(analysis.sentences, transcriptData);
+  const perfectScore = isVirtuallyFlawlessAnalysis(analysis);
+  const scoresUnavailable = isClearlyUnscorableSpeech(analysis, transcript);
 
   return (
     <div className="analysis-page">
       <div className="verdict-card">
         <div className="verdict-score">
           <span>Score</span>
-          <StarRating value={analysis.scorecard.stars} />
-          <strong>{formatStarValue(curveAnalysisStars(analysis.scorecard.stars))} / 5</strong>
+          {scoresUnavailable ? (
+            <span className="score-na large">N/A</span>
+          ) : (
+            <>
+              <StarRating value={analysis.scorecard.stars} perfect={perfectScore} />
+              <strong>{formatStarValue(displayScoreValue(analysis.scorecard.stars, perfectScore))} / 5</strong>
+            </>
+          )}
         </div>
         <div className="verdict-body">
           <h2>{analysis.scorecard.title}</h2>
@@ -2210,7 +2265,11 @@ function ScorecardPanel({
       <div className="tab-panel">
         {activeTab === "scorecard" ? (
           <>
-            <CategoryAccordion categories={analysis.categories} categoryKeys={getCategoryOrder(mode, analysis.categories)} />
+            <CategoryAccordion
+              categories={analysis.categories}
+              categoryKeys={getCategoryOrder(mode, analysis.categories)}
+              scoresUnavailable={scoresUnavailable}
+            />
             <SectionedTranscript
               sentences={analysis.sentences}
               timestamps={sentenceTimestamps}
@@ -2345,18 +2404,23 @@ function AnalyzingProgress({ stage, saveOnly }: { stage: AnalyzingStage; saveOnl
 
   useEffect(() => {
     if (stage === "done") {
-      setPercent(100);
-      return undefined;
+      const doneTimer = window.setTimeout(() => setPercent(100), 0);
+      return () => window.clearTimeout(doneTimer);
     }
     const [floor, ceiling] = saveOnly ? [0, 95] : ANALYZING_STAGE_RANGES[stage];
-    setPercent((current) => Math.max(current, floor));
+    const floorTimer = window.setTimeout(() => {
+      setPercent((current) => Math.max(current, floor));
+    }, 0);
     const timer = window.setInterval(() => {
       setPercent((current) => {
         if (current >= ceiling) return current;
         return Math.min(ceiling, current + Math.max(0.15, (ceiling - current) * 0.04));
       });
     }, 200);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(floorTimer);
+      window.clearInterval(timer);
+    };
   }, [stage, saveOnly]);
 
   const rounded = Math.round(percent);
@@ -2455,12 +2519,22 @@ export default function SpeechBrigade() {
   } | null>(null);
   const [preparedScript, setPreparedScript] = useState<PreparedScriptContext | null>(null);
   const [scriptUploadStatus, setScriptUploadStatus] = useState("");
+  const [pendingAuthScreen, setPendingAuthScreen] = useState<Screen | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const saveRecordingPreferenceLoadedRef = useRef(false);
   const scriptInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [screen]);
 
   useEffect(() => {
     const readyId = window.setTimeout(() => {
@@ -2485,7 +2559,10 @@ export default function SpeechBrigade() {
 
   useEffect(() => {
     if (screen === "eventsAuth" && session) {
-      const id = window.setTimeout(() => setScreen("events"), 0);
+      const id = window.setTimeout(() => {
+        setScreen(pendingAuthScreen || "events");
+        setPendingAuthScreen(null);
+      }, 0);
       return () => window.clearTimeout(id);
     }
     if (screen === "signIn" && session) {
@@ -2493,7 +2570,7 @@ export default function SpeechBrigade() {
       return () => window.clearTimeout(id);
     }
     return undefined;
-  }, [screen, session]);
+  }, [screen, session, pendingAuthScreen]);
 
   useEffect(() => {
     if (screen !== "pastSpeeches" || !session || !supabase) return undefined;
@@ -2590,6 +2667,16 @@ export default function SpeechBrigade() {
     setInfoModal(null);
   };
 
+  const goToPracticeStart = (nextScreen: Screen) => {
+    if (isSupabaseConfigured && !session) {
+      setPendingAuthScreen(nextScreen);
+      setScreen("eventsAuth");
+      return;
+    }
+    setPendingAuthScreen(null);
+    setScreen(nextScreen);
+  };
+
   const setAllocatedTime = (index: number) => {
     const picked = allocationOptions[index];
     setAllocationIndex(index);
@@ -2607,6 +2694,7 @@ export default function SpeechBrigade() {
     setPreparedResult(null);
     setPreparedScript(null);
     setScriptUploadStatus("");
+    setPendingAuthScreen(null);
     setSelectedGameId(null);
     setGameSession(null);
     setGameRevealSpinning(false);
@@ -3302,9 +3390,8 @@ export default function SpeechBrigade() {
       case "landing":
         return (
           <section className="hero">
-            <p className="eyebrow">National Speech & Debate Association practice studio</p>
             <h1>Speech Brigade</h1>
-            <p className="lede">Practice under pressure.</p>
+            <p className="lede">Speech and Debate Practice and Analysis</p>
             <div className="hero-actions">
               <button
                 className="ghost-card"
@@ -3314,15 +3401,13 @@ export default function SpeechBrigade() {
               >
                 <i className="coming-soon-badge">Coming Soon</i>
                 <span>Speaking Games</span>
-                <small>Small challenges. Stronger speakers. Launching soon.</small>
               </button>
               <button
                 className="primary-card"
                 type="button"
-                onClick={() => setScreen(session || !isSupabaseConfigured ? "events" : "eventsAuth")}
+                onClick={() => setScreen("events")}
               >
                 <span>National Speech & Debate Association</span>
-                <small>Speaking event practice</small>
               </button>
             </div>
           </section>
@@ -3526,19 +3611,15 @@ export default function SpeechBrigade() {
             <div className="event-grid">
               <button className="event-card" type="button" onClick={() => startMode("impromptu")}>
                 <span>Impromptu Speaking</span>
-                <small>Think quickly. Speak clearly.</small>
               </button>
               <button className="event-card" type="button" onClick={() => startMode("extemp")}>
                 <span>Extemporaneous Speaking</span>
-                <small>Research. Analyze. Deliver.</small>
               </button>
               <button className="event-card" type="button" onClick={() => setScreen("preparedSelection")}>
                 <span>Prepared Speaking</span>
-                <small>Develop your message. Perfect your delivery.</small>
               </button>
               <button className="event-card" type="button" onClick={() => setScreen("interpretationSelection")}>
                 <span>Interpretation</span>
-                <small>Bring stories and characters to life.</small>
               </button>
             </div>
           </section>
@@ -3546,9 +3627,7 @@ export default function SpeechBrigade() {
       case "preparedSelection":
         return (
           <section className="narrow">
-            <p className="eyebrow">Prepared Speaking</p>
             <h1>Prepared Speaking</h1>
-            <p className="lede">Craft your message. Refine your performance.</p>
             <div className="event-grid">
               {PREPARED_EVENT_IDS.map((eventId) => {
                 const eventConfig = PREPARED_EVENT_CONFIGS[eventId];
@@ -3569,7 +3648,6 @@ export default function SpeechBrigade() {
       case "interpretationSelection":
         return (
           <section className="narrow">
-            <p className="eyebrow">Interpretation</p>
             <h1>Interpretation</h1>
             <p className="lede">Transform literature into a compelling performance.</p>
             <div className="event-grid">
@@ -3602,7 +3680,6 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="reading">
-            <p className="eyebrow">{selectedPreparedEvent.name} · {selectedPreparedEvent.acronym}</p>
             <h1>{selectedPreparedEvent.welcomeTitle}</h1>
             <InstructionBlock>
               {selectedPreparedEvent.introParagraphs.map((paragraph) => (
@@ -3622,7 +3699,7 @@ export default function SpeechBrigade() {
               </p>
             </InstructionBlock>
             <div className="button-row">
-              <button className="primary" type="button" onClick={() => setScreen("speechWorkspace")}>Next</button>
+              <button className="primary" type="button" onClick={() => goToPracticeStart("speechWorkspace")}>Next</button>
               <button className="secondary" type="button" onClick={() => setScreen(selectedPreparedEvent.category === "prepared" ? "preparedSelection" : "interpretationSelection")}>Back</button>
             </div>
           </section>
@@ -3640,7 +3717,6 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="speech-workspace">
-            <p className="eyebrow">{selectedPreparedEvent.name} · {selectedPreparedEvent.acronym}</p>
             <h1>Your Speech</h1>
             <p className="lede">Upload your script to personalize your performance feedback, or continue without one.</p>
             <input
@@ -3756,16 +3832,8 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="results">
-            <p className="eyebrow">Round complete</p>
-            <h1>Round complete.</h1>
+            <h1>Round complete!</h1>
             <p className="lede">Great work. You&apos;ve completed a practice performance.</p>
-            <div className="summary-card">
-              <SummaryRow label="Event" value={`${resultEvent.name} (${resultEvent.acronym})`} />
-              <SummaryRow label="Time limit" value={formatTime(resultEvent.performanceDurationSeconds)} />
-              <SummaryRow label="Performance time" value={formatTime(preparedResult.elapsedSeconds)} />
-              <SummaryRow label="Completion" value={preparedResult.completion === "expired" ? "Timer expired" : "I'm done"} />
-              {preparedScript?.status === "ready" ? <SummaryRow label="Script context" value={preparedScript.fileName} /> : null}
-            </div>
             {preparedResult.analysis ? (
               <ScorecardPanel
                 analysis={preparedResult.analysis}
@@ -4030,7 +4098,7 @@ export default function SpeechBrigade() {
               <span>3:00</span>
               <span>4:00</span>
             </div>
-            <button className="primary" type="button" onClick={() => setScreen("themeSpin")}>Continue</button>
+            <button className="primary" type="button" onClick={() => goToPracticeStart("themeSpin")}>Continue</button>
           </section>
         );
       case "themeSpin":
@@ -4167,7 +4235,7 @@ export default function SpeechBrigade() {
 	                setRecordingError("");
 	              }}
             />
-            <button className="primary" type="button" onClick={() => setScreen("questionSpin")}>Next</button>
+            <button className="primary" type="button" onClick={() => goToPracticeStart("questionSpin")}>Next</button>
           </section>
         );
       case "questionSpin":
@@ -4253,8 +4321,7 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="results">
-            <p className="eyebrow">Round complete</p>
-            <h1>Round complete.</h1>
+            <h1>Round complete!</h1>
             <p className="lede">Good job. You completed an {round.mode === "extemp" ? "Extemporaneous Speaking" : "Impromptu"} round.</p>
             <div className="summary-card">
               <SummaryRow label="Event" value={modeLabel} />
@@ -4349,7 +4416,13 @@ export default function SpeechBrigade() {
 	        ) : (
 	          <>
 	            <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
-	              <span>Speech</span> Brigade
+	              <Image
+	                src="/speech-brigade-logo.png"
+	                alt="Speech Brigade"
+	                width={64}
+	                height={64}
+	                priority
+	              />
 	            </button>
 	            <div className="mode-label">{modeLabel}</div>
 	          </>
@@ -4372,7 +4445,7 @@ export default function SpeechBrigade() {
 	              type="button"
 	              onClick={() => setScreen("signIn")}
 	            >
-	              {screen === "landing" ? "Sign Up" : "Sign In"}
+	              Sign In
 	            </button>
 	          )}
 	        </nav>
@@ -4388,6 +4461,15 @@ export default function SpeechBrigade() {
       >
         <span className="creator-copy">Learn About Speech Brigade&apos;s Founders</span>
       </button>
+      <a
+        className="tip-float"
+        href="https://buymeacoffee.com/speechbrigade"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Leave a tip to keep Speech Brigade free"
+      >
+        Leave a tip to keep our site free!
+      </a>
       {infoModal ? (
         <div
           className="founders-modal-backdrop"
@@ -4449,24 +4531,6 @@ export default function SpeechBrigade() {
             <div className="founders-grid">
               <article className="founder-card">
                 <Image
-                  src="/founders/mona-su.jpg"
-                  alt="Mona Su"
-                  width={400}
-                  height={400}
-                  sizes="(max-width: 760px) 90vw, 360px"
-                />
-                <h3>Mona Su</h3>
-                <div className="founder-links">
-                  <a href="https://www.speechpact.com/" target="_blank" rel="noreferrer">
-                    Website
-                  </a>
-                  <a href="https://www.linkedin.com/in/mona-su-255301195" target="_blank" rel="noreferrer">
-                    LinkedIn
-                  </a>
-                </div>
-              </article>
-              <article className="founder-card">
-                <Image
                   src="/founders/jd-hopper-founder.png"
                   alt="JD Hopper speaking"
                   width={900}
@@ -4479,6 +4543,24 @@ export default function SpeechBrigade() {
                     Website
                   </a>
                   <a href="https://www.linkedin.com/in/jd-hopper" target="_blank" rel="noreferrer">
+                    LinkedIn
+                  </a>
+                </div>
+              </article>
+              <article className="founder-card">
+                <Image
+                  src="/founders/mona-su.jpg"
+                  alt="Mona Su"
+                  width={400}
+                  height={400}
+                  sizes="(max-width: 760px) 90vw, 360px"
+                />
+                <h3>Mona Su</h3>
+                <div className="founder-links">
+                  <a href="https://www.speechpact.com/" target="_blank" rel="noreferrer">
+                    Website
+                  </a>
+                  <a href="https://www.linkedin.com/in/mona-su-255301195" target="_blank" rel="noreferrer">
                     LinkedIn
                   </a>
                 </div>
