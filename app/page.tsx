@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
 
@@ -24,33 +24,39 @@ type Screen =
   | "gameResults"
   | "eventsAuth"
   | "events"
-  | "preparedSelection"
-  | "interpretationSelection"
   | "preparedEventIntro"
-  | "speechWorkspace"
-  | "preparedDeliveryCountdown"
-  | "preparedPerformance"
   | "preparedResults"
   | "signIn"
   | "settings"
   | "pastSpeeches"
   | "impromptuIntro"
-  | "timeAllocation"
-  | "themeSpin"
-  | "themeResult"
-  | "topicSpin"
-  | "topicSelect"
-  | "impromptuPrep"
-  | "deliveryCountdown"
   | "impromptuDelivery"
   | "analyzing"
   | "extempIntro"
-  | "questionSpin"
-  | "questionSelect"
-  | "extempPrep"
   | "extempDelivery"
   | "results"
   | "vaultAnalysis";
+
+// Matches the impromptu-recordings bucket's file_size_limit (15 MB), which is stricter than
+// the transcribe function's own 20 MB cap, so oversized recordings are caught before uploading.
+const MAX_RECORDING_BYTES = 15 * 1024 * 1024;
+const RECORDING_TOO_LARGE_MESSAGE = "Congrats! You spoke so much we can't handle it. Try a bit shorter.";
+
+// Mid-flow screens (spins, countdowns, timers, recording, auth redirects) never get their own
+// browser history entry, so going back skips over them to the last screen the user chose.
+const TRANSIENT_SCREENS = new Set<Screen>([
+  "hotSeatReveal",
+  "wordFusionSpin",
+  "storyRelaySetup",
+  "landPlaneSetup",
+  "gamePrepCountdown",
+  "gameChallenge",
+  "eventsAuth",
+  "signIn",
+  "impromptuDelivery",
+  "analyzing",
+  "extempDelivery",
+]);
 
 // Current analyses use organization/analysis/delivery for every event.
 // The legacy Extemp keys remain here so older saved rounds still render.
@@ -159,7 +165,6 @@ interface PreparedEventConfig {
   name: string;
   acronym: string;
   shortDescription: string;
-  welcomeTitle: string;
   introParagraphs: string[];
   objectiveParagraph: string;
   expectationsParagraph: string;
@@ -281,7 +286,6 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     name: "Original Oratory",
     acronym: "OO",
     shortDescription: "Present an original speech designed to inform, inspire, or persuade.",
-    welcomeTitle: "Welcome to Original Oratory",
     introParagraphs: [
       "Original Oratory challenges you to develop and deliver an original speech that communicates a compelling message.",
       "Your speech may address an important issue, challenge an audience's perspective, or inspire meaningful reflection or action.",
@@ -303,7 +307,6 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     name: "Informative Speaking",
     acronym: "INF",
     shortDescription: "Teach your audience something new through a clear, engaging presentation.",
-    welcomeTitle: "Welcome to Informative Speaking",
     introParagraphs: [
       "Informative Speaking challenges you to teach your audience something meaningful through a clear, engaging, and well-organized presentation.",
       "Strong informative speeches use logical organization, clear explanations, relevant examples, and effective delivery.",
@@ -324,8 +327,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     category: "interpretation",
     name: "Dramatic Interpretation",
     acronym: "DI",
-    shortDescription: "Bring a dramatic literary selection to life through characterization and emotional expression.",
-    welcomeTitle: "Welcome to Dramatic Interpretation",
+    shortDescription: "A 10-minute performance of a published literary work.",
     introParagraphs: [
       "Dramatic Interpretation challenges you to bring a literary selection to life through a compelling solo performance.",
       "Focus on creating a believable performance that allows your audience to understand and connect with the story.",
@@ -346,8 +348,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     category: "interpretation",
     name: "Humorous Interpretation",
     acronym: "HI",
-    shortDescription: "Entertain through comedic storytelling, characterization, and timing.",
-    welcomeTitle: "Welcome to Humorous Interpretation",
+    shortDescription: "A 10-minute performance of a published literary work.",
     introParagraphs: [
       "Humorous Interpretation challenges you to bring a literary selection to life through comedic performance.",
       "Focus on making your characterization clear and your performance engaging.",
@@ -368,8 +369,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     category: "interpretation",
     name: "Duo Interpretation",
     acronym: "DUO",
-    shortDescription: "Perform a literary selection with a partner through coordinated characterization and delivery.",
-    welcomeTitle: "Welcome to Duo Interpretation",
+    shortDescription: "A 10-minute performance of a published literary work.",
     introParagraphs: [
       "Duo Interpretation is a two-person performance of a literary selection.",
       "Both performers should contribute to a unified and engaging presentation.",
@@ -390,8 +390,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     category: "interpretation",
     name: "Program Oral Interpretation",
     acronym: "POI",
-    shortDescription: "Combine multiple literary selections into a unified performance centered on a common theme.",
-    welcomeTitle: "Welcome to Program Oral Interpretation",
+    shortDescription: "A 10-minute performance of a published literary work.",
     introParagraphs: [
       "Program Oral Interpretation challenges you to combine multiple literary selections into one cohesive performance.",
       "Your program should explore a central theme or message through a purposeful combination of literary material.",
@@ -1157,6 +1156,8 @@ function TimerPanel({
   topic,
   topicLabel,
   timerKey,
+  active = true,
+  onStart,
 }: {
   label: string;
   seconds: number;
@@ -1166,10 +1167,13 @@ function TimerPanel({
   topic?: string;
   topicLabel?: string;
   timerKey: string;
+  // When inactive, the full time shows and the button starts the timer instead.
+  active?: boolean;
+  onStart?: () => void;
 }) {
   const { remaining, finishNow, progress } = useCountdownTimer({
     seconds,
-    active: true,
+    active,
     onComplete,
     onWarningSecond,
     timerKey,
@@ -1191,66 +1195,15 @@ function TimerPanel({
             <strong>{formatTime(remaining)}</strong>
           </div>
         </div>
-        {buttonLabel ? (
+        {!active && onStart ? (
+          <button className="primary big-action" type="button" onClick={onStart}>
+            Start
+          </button>
+        ) : buttonLabel ? (
           <button className="secondary big-action" type="button" onClick={finishNow}>
             {buttonLabel}
           </button>
         ) : null}
-      </div>
-    </section>
-  );
-}
-
-function SelectionTimer({
-  onComplete,
-  onWarningSecond,
-  timerKey,
-}: {
-  onComplete: () => void;
-  onWarningSecond: (second: number) => void;
-  timerKey: string;
-}) {
-  const { remaining, progress } = useCountdownTimer({
-    seconds: 30,
-    active: true,
-    onComplete: () => onComplete(),
-    onWarningSecond,
-    timerKey,
-  });
-  const urgent = remaining <= 5 && remaining > 0;
-  return (
-    <div className={`selection-timer ${urgent ? "urgent" : ""}`}>
-      <span>Choose before time expires</span>
-      <strong>{formatTime(remaining)}</strong>
-      <div className="thin-progress">
-        <i style={{ transform: `scaleX(${Math.max(0, 1 - progress)})` }} />
-      </div>
-    </div>
-  );
-}
-
-function DeliveryCountdown({
-  onDone,
-  onWarningSecond,
-}: {
-  onDone: () => void;
-  onWarningSecond: (second: number) => void;
-}) {
-  const { remaining } = useCountdownTimer({
-    seconds: 5,
-    active: true,
-    onComplete: () => onDone(),
-    onWarningSecond,
-    timerKey: "delivery-countdown",
-  });
-  const count = Math.max(1, Math.ceil(remaining));
-
-  return (
-    <section className="countdown-screen">
-      <p>Preparation complete</p>
-      <h1>It&apos;s time to deliver.</h1>
-      <div className="countdown-number" data-count={count}>
-        {count}
       </div>
     </section>
   );
@@ -1423,19 +1376,41 @@ function SlotWindows({
   items,
   activeIndex,
   large,
+  onSelect,
+  selectedValue,
 }: {
   items: SlotItem[];
   activeIndex: number | null;
   large?: boolean;
+  // When set, resolved slots become buttons that pick that item.
+  onSelect?: (index: number) => void;
+  selectedValue?: string;
 }) {
   return (
     <div className={`slot-stack ${large ? "large" : ""}`}>
-      {items.map((item, index) => (
-        <div className={`slot-window ${activeIndex === index ? "spinning" : ""} ${item.value !== "—" ? "resolved" : ""}`} key={`${index}-${item.value}`}>
-          {item.label ? <span>{item.label}</span> : null}
-          <strong>{activeIndex === index ? <i>{item.value}</i> : item.value}</strong>
-        </div>
-      ))}
+      {items.map((item, index) => {
+        const className = `slot-window ${activeIndex === index ? "spinning" : ""} ${item.value !== "—" ? "resolved" : ""}`;
+        const content = (
+          <>
+            {item.label ? <span>{item.label}</span> : null}
+            <strong>{activeIndex === index ? <i>{item.value}</i> : item.value}</strong>
+          </>
+        );
+        if (!onSelect) {
+          return <div className={className} key={`${index}-${item.value}`}>{content}</div>;
+        }
+        return (
+          <button
+            className={`${className} selectable ${selectedValue === item.value ? "locked" : ""}`}
+            type="button"
+            key={`${index}-${item.value}`}
+            onClick={() => onSelect(index)}
+            disabled={Boolean(selectedValue)}
+          >
+            {content}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1449,34 +1424,100 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Event names always render on two lines: the last word drops to the second line.
+function EventCardTitle({ name }: { name: string }) {
+  const splitAt = name.lastIndexOf(" ");
+  if (splitAt === -1) return <span>{name}</span>;
+  return (
+    <span>
+      {name.slice(0, splitAt)}
+      <br />
+      {name.slice(splitAt + 1)}
+    </span>
+  );
+}
+
 function InstructionBlock({ children }: { children: React.ReactNode }) {
   return <div className="instruction-copy">{children}</div>;
 }
 
 function PracticeOptionToggle({
   title,
-  description,
   enabled,
   onChange,
+  info,
 }: {
   title: string;
-  description: string;
   enabled: boolean;
   onChange: (enabled: boolean) => void;
+  info?: React.ReactNode;
 }) {
   return (
-    <label className="analysis-toggle">
-      <span>
+    <div className="analysis-toggle">
+      <div className="toggle-heading">
         <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      <input
-        type="checkbox"
-        checked={enabled}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <i aria-hidden="true" />
-    </label>
+        {info}
+      </div>
+      <label className="toggle-switch">
+        <input
+          type="checkbox"
+          aria-label={title}
+          checked={enabled}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <i aria-hidden="true" />
+      </label>
+    </div>
+  );
+}
+
+function PrivacyInfoButton() {
+  // Click pins the tip open; hovering shows it only while the pointer is over the icon or tip.
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <span
+      className="info-anchor"
+      ref={wrapRef}
+      onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") setHovered(true);
+      }}
+      onPointerLeave={() => setHovered(false)}
+    >
+      <button
+        className="info-button"
+        type="button"
+        aria-label="About saving recordings"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        i
+      </button>
+      {open || hovered ? (
+        <span className="privacy-tip" role="tooltip">
+          Your privacy matters. Saving recordings is optional and exists only so you can revisit your own practice.
+          Whether you save a recording or not, Speech Brigade does not listen to, reuse, or train on your audio or transcript.
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -1495,20 +1536,15 @@ function PracticePrivacyOptions({
     <div className="practice-options">
       <PracticeOptionToggle
         title="Speech analysis"
-        description="Record audio during delivery and score the round afterward."
         enabled={analysisEnabled}
         onChange={onAnalysisChange}
       />
       <PracticeOptionToggle
         title="Save recording"
-        description="Keep this round in your account so you can review it later."
         enabled={saveRecordingEnabled}
         onChange={onSaveRecordingChange}
+        info={<PrivacyInfoButton />}
       />
-      <p className="privacy-note">
-        Your privacy matters. Saving recordings is optional and exists only so you can revisit your own practice.
-        Whether you save a recording or not, Speech Brigade does not listen to, reuse, or train on your audio or transcript.
-      </p>
     </div>
   );
 }
@@ -2415,7 +2451,30 @@ function VaultCard({
 
 export default function SpeechBrigade() {
   const audio = useAudio();
-  const [screen, setScreen] = useState<Screen>("landing");
+  const [screen, setScreenState] = useState<Screen>("landing");
+  const screenRef = useRef<Screen>("landing");
+  const historyKeyRef = useRef("");
+
+  // Every screen change becomes a browser history entry so Back returns to the previous screen.
+  // Leaving a transient screen replaces its entry instead of stacking a new one.
+  const setScreen = useCallback((next: Screen) => {
+    const current = screenRef.current;
+    if (next === current) return;
+    screenRef.current = next;
+    const state = { screen: next, key: historyKeyRef.current };
+    if (TRANSIENT_SCREENS.has(current)) window.history.replaceState(state, "");
+    else window.history.pushState(state, "");
+    setScreenState(next);
+  }, []);
+
+  const goBack = useCallback(() => {
+    if (window.history.state?.key === historyKeyRef.current && screenRef.current !== "landing") {
+      window.history.back();
+    } else {
+      screenRef.current = "landing";
+      setScreenState("landing");
+    }
+  }, []);
   const [round, setRound] = useState<RoundState>(initialRound);
   const [allocationIndex, setAllocationIndex] = useState(2);
   const [themeDisplay, setThemeDisplay] = useState("READY");
@@ -2423,6 +2482,11 @@ export default function SpeechBrigade() {
   const [slotItems, setSlotItems] = useState<SlotItem[]>([{ value: "—" }, { value: "—" }, { value: "—" }]);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [lockedChoice, setLockedChoice] = useState("");
+  // Impromptu/Extemp setup steps stack on one page; each appears after pressing Next.
+  const [setupStage, setSetupStage] = useState<"spin" | "topics" | "prep">("spin");
+  const latestSetupStepRef = useRef<HTMLDivElement | null>(null);
+  // Prepared/interp events: the countdown and performance timer appear under the script step.
+  const [preparedStage, setPreparedStage] = useState<"setup" | "performance">("setup");
 
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
@@ -2493,7 +2557,7 @@ export default function SpeechBrigade() {
       return () => window.clearTimeout(id);
     }
     return undefined;
-  }, [screen, session]);
+  }, [screen, session, setScreen]);
 
   useEffect(() => {
     if (screen !== "pastSpeeches" || !session || !supabase) return undefined;
@@ -2522,6 +2586,11 @@ export default function SpeechBrigade() {
       window.clearTimeout(loadingId);
     };
   }, [screen, session]);
+
+  useEffect(() => {
+    if (setupStage === "spin" && preparedStage === "setup") return;
+    latestSetupStepRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [setupStage, preparedStage]);
 
   useEffect(() => {
     if (!foundersOpen) return undefined;
@@ -2568,18 +2637,11 @@ export default function SpeechBrigade() {
             ? selectedGame.name
           : "";
   const isDarkPhase = [
-    "topicSelect",
-    "impromptuPrep",
-    "deliveryCountdown",
     "impromptuDelivery",
     "analyzing",
-    "questionSelect",
-    "extempPrep",
     "extempDelivery",
     "results",
     "vaultAnalysis",
-    "preparedDeliveryCountdown",
-    "preparedPerformance",
     "preparedResults",
     "gamePrepCountdown",
     "gameChallenge",
@@ -2618,15 +2680,21 @@ export default function SpeechBrigade() {
     setRecordingError("");
   };
 
-  const startMode = (mode: EventMode) => {
-    audio.unlock();
+  const resetModeRound = (mode: EventMode) => {
     setRound({ ...initialRound, mode });
+    setAllocationIndex(2);
+    setSetupStage("spin");
     setThemeDisplay("READY");
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setActiveSlot(null);
     setLockedChoice("");
     setSpeechAnalysisEnabled(true);
     setRecordingError("");
+  };
+
+  const startMode = (mode: EventMode) => {
+    audio.unlock();
+    resetModeRound(mode);
     setScreen(mode === "impromptu" ? "impromptuIntro" : "extempIntro");
   };
 
@@ -2638,6 +2706,7 @@ export default function SpeechBrigade() {
     setScriptUploadStatus("");
     setRound(initialRound);
     setRecordingError("");
+    setPreparedStage("setup");
     setScreen("preparedEventIntro");
   };
 
@@ -2648,6 +2717,49 @@ export default function SpeechBrigade() {
     setGameRevealSpinning(false);
     setScreen("gameInstructions");
   };
+
+  useEffect(() => {
+    historyKeyRef.current = `${Date.now()}-${Math.random()}`;
+    window.history.replaceState({ screen: "landing", key: historyKeyRef.current }, "");
+
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as { screen?: Screen; key?: string } | null;
+      // Entries from before a reload point at screens whose data is gone, so they fall back to landing.
+      const target: Screen = state?.key === historyKeyRef.current && state.screen ? state.screen : "landing";
+      if (TRANSIENT_SCREENS.has(target)) {
+        // Only reachable with Forward after abandoning a round; don't resume a dead timer.
+        window.history.back();
+        return;
+      }
+
+      // Leaving mid-round: release the microphone without uploading anything.
+      const recorder = mediaRecorderRef.current;
+      if (recorder) {
+        recorder.onstop = null;
+        if (recorder.state !== "inactive") recorder.stop();
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        mediaRecorderRef.current = null;
+        mediaStreamRef.current = null;
+      }
+
+      // Intro screens start a fresh round, like entering them the first time.
+      if (target === "impromptuIntro") resetModeRound("impromptu");
+      if (target === "extempIntro") resetModeRound("extemp");
+      if (target === "preparedEventIntro") {
+        setRound(initialRound);
+        setPreparedStage("setup");
+      }
+      if (target === "gameInstructions") {
+        setGameSession((current) => (current ? { gameId: current.gameId } : current));
+        setGameRevealSpinning(false);
+      }
+      screenRef.current = target;
+      setScreenState(target);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const gameConfig = selectedGameId ? SPEAKING_GAME_CONFIGS[selectedGameId] : null;
 
@@ -2796,7 +2908,9 @@ export default function SpeechBrigade() {
   useEffect(() => {
     if (
       (speechAnalysisEnabled || saveRecordingEnabled) &&
-      (screen === "impromptuDelivery" || screen === "extempDelivery" || screen === "preparedPerformance")
+      (screen === "impromptuDelivery" ||
+        screen === "extempDelivery" ||
+        (screen === "preparedEventIntro" && preparedStage === "performance"))
     ) {
       const id = window.setTimeout(() => {
         void startRecording();
@@ -2805,7 +2919,7 @@ export default function SpeechBrigade() {
     }
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, speechAnalysisEnabled, saveRecordingEnabled]);
+  }, [screen, preparedStage, speechAnalysisEnabled, saveRecordingEnabled]);
 
 	  const getRecordingSession = async () => {
 	    if (!supabase || !supabaseUrl) {
@@ -2823,12 +2937,19 @@ export default function SpeechBrigade() {
 
 	  const uploadRecordingBlob = async (blob: Blob, userId: string) => {
 	    if (!supabase) throw new Error("Recording features need Supabase settings.");
+	    if (blob.size > MAX_RECORDING_BYTES) throw new Error(RECORDING_TOO_LARGE_MESSAGE);
 	    const extension = blob.type.includes("mp4") ? "m4a" : "webm";
 	    const path = `${userId}/${Date.now()}.${extension}`;
 	    const { error: uploadError } = await supabase.storage
 	      .from("impromptu-recordings")
 	      .upload(path, blob, { contentType: blob.type || "audio/webm" });
-	    if (uploadError) throw uploadError;
+	    if (uploadError) {
+	      const statusCode = "statusCode" in uploadError ? String(uploadError.statusCode) : "";
+	      if (statusCode === "413" || /maximum allowed size/i.test(uploadError.message)) {
+	        throw new Error(RECORDING_TOO_LARGE_MESSAGE);
+	      }
+	      throw uploadError;
+	    }
 	    const { data: publicUrlData } = supabase.storage.from("impromptu-recordings").getPublicUrl(path);
 	    return { extension, path, audioUrl: publicUrlData.publicUrl };
 	  };
@@ -2936,6 +3057,7 @@ export default function SpeechBrigade() {
         headers: { Authorization: `Bearer ${token}` },
         body: form,
       });
+      if (transcribeRes.status === 413) throw new Error(RECORDING_TOO_LARGE_MESSAGE);
       const transcribeBody = await transcribeRes.json();
       if (!transcribeRes.ok) throw new Error(transcribeBody.error || "Transcription failed");
       const { transcript, transcriptData } = transcribeBody;
@@ -3021,18 +3143,23 @@ export default function SpeechBrigade() {
       }));
       setThemeDisplay("READY");
       setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-      setScreen("timeAllocation");
+      setLockedChoice("");
+      setSetupStage("spin");
+      setScreen("impromptuIntro");
     } else {
       setRound({ ...initialRound, mode: "extemp", prepSecondsAllocated: 1800, deliverySecondsAllocated: 420 });
       setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-      setScreen("questionSpin");
+      setLockedChoice("");
+      setSetupStage("spin");
+      setScreen("extempIntro");
     }
   };
 
   const practicePreparedAgain = () => {
     if (!selectedPreparedEventId) return;
     setPreparedResult(null);
-    setScreen("speechWorkspace");
+    setPreparedStage("setup");
+    setScreen("preparedEventIntro");
   };
 
   const spinTheme = () => {
@@ -3051,12 +3178,11 @@ export default function SpeechBrigade() {
         setRound((current) => ({ ...current, impromptuTheme: chosen.theme }));
         setThemeSpinning(false);
         audio.ding();
-        window.setTimeout(() => setScreen("themeResult"), 650);
       }
     }, 72 + Math.min(iterations * 8, 90));
   };
 
-  const spinSequentialSlots = (items: SlotItem[], nextScreen: Screen) => {
+  const spinSequentialSlots = (items: SlotItem[]) => {
     audio.unlock();
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setLockedChoice("");
@@ -3073,9 +3199,6 @@ export default function SpeechBrigade() {
         setSlotItems((current) => current.map((slot, slotIndex) => (slotIndex === index ? item : slot)));
         setActiveSlot(null);
         audio.ding();
-        if (index === items.length - 1) {
-          window.setTimeout(() => setScreen(nextScreen), 900);
-        }
       }, index * 1450 + 1180);
     });
   };
@@ -3084,7 +3207,7 @@ export default function SpeechBrigade() {
     const theme = themeBank.find((item) => item.theme === round.impromptuTheme) || randomItem(themeBank);
     const topics = uniqueDraw(theme.topics, 3);
     setRound((current) => ({ ...current, topicOptions: topics }));
-    spinSequentialSlots(topics.map((topic) => ({ value: topic })), "topicSelect");
+    spinSequentialSlots(topics.map((topic) => ({ value: topic })));
   };
 
   const spinQuestions = () => {
@@ -3095,10 +3218,7 @@ export default function SpeechBrigade() {
       prepSecondsAllocated: 1800,
       deliverySecondsAllocated: 420,
     }));
-    spinSequentialSlots(
-      questions.map((question) => ({ value: question.question, label: question.category })),
-      "questionSelect",
-    );
+    spinSequentialSlots(questions.map((question) => ({ value: question.question, label: question.category })));
   };
 
   const spinWordFusion = () => {
@@ -3131,7 +3251,8 @@ export default function SpeechBrigade() {
     setLockedChoice(topic);
     window.setTimeout(() => {
       setRound((current) => ({ ...current, selectedTopic: topic, roundStartTime: Date.now() }));
-      setScreen(round.prepSecondsAllocated === 0 ? "deliveryCountdown" : "impromptuPrep");
+      if (round.prepSecondsAllocated === 0) setScreen("impromptuDelivery");
+      else setSetupStage("prep");
     }, 280);
   };
 
@@ -3139,7 +3260,7 @@ export default function SpeechBrigade() {
     setLockedChoice(question.question);
     window.setTimeout(() => {
       setRound((current) => ({ ...current, selectedQuestion: question, roundStartTime: Date.now() }));
-      setScreen("extempPrep");
+      setSetupStage("prep");
     }, 280);
   };
 
@@ -3181,7 +3302,7 @@ export default function SpeechBrigade() {
 
   const handlePrepComplete = (elapsed: number) => {
     setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
-    setScreen("deliveryCountdown");
+    setScreen(round.mode === "extemp" ? "extempDelivery" : "impromptuDelivery");
   };
 
 	  const handleDeliveryComplete = (elapsed: number) => {
@@ -3297,6 +3418,27 @@ export default function SpeechBrigade() {
     audio.press();
   };
 
+  const slotsDrawn = activeSlot === null && slotItems.every((slot) => slot.value !== "—");
+
+  const practicePrivacyOptions = (
+    <PracticePrivacyOptions
+      analysisEnabled={speechAnalysisEnabled}
+      saveRecordingEnabled={saveRecordingEnabled}
+      onAnalysisChange={(enabled) => {
+        if (enabled) audio.toggleOn();
+        else audio.toggleOff();
+        setSpeechAnalysisEnabled(enabled);
+        setRecordingError("");
+      }}
+      onSaveRecordingChange={(enabled) => {
+        if (enabled) audio.toggleOn();
+        else audio.toggleOff();
+        setSaveRecordingEnabled(enabled);
+        setRecordingError("");
+      }}
+    />
+  );
+
   const content = (() => {
     switch (screen) {
       case "landing":
@@ -3304,7 +3446,6 @@ export default function SpeechBrigade() {
           <section className="hero">
             <p className="eyebrow">National Speech & Debate Association practice studio</p>
             <h1>Speech Brigade</h1>
-            <p className="lede">Practice under pressure.</p>
             <div className="hero-actions">
               <button
                 className="ghost-card"
@@ -3314,7 +3455,6 @@ export default function SpeechBrigade() {
               >
                 <i className="coming-soon-badge">Coming Soon</i>
                 <span>Speaking Games</span>
-                <small>Small challenges. Stronger speakers. Launching soon.</small>
               </button>
               <button
                 className="primary-card"
@@ -3322,7 +3462,6 @@ export default function SpeechBrigade() {
                 onClick={() => setScreen(session || !isSupabaseConfigured ? "events" : "eventsAuth")}
               >
                 <span>National Speech & Debate Association</span>
-                <small>Speaking event practice</small>
               </button>
             </div>
           </section>
@@ -3347,7 +3486,7 @@ export default function SpeechBrigade() {
                 );
               })}
             </div>
-            <button className="secondary" type="button" onClick={goHome}>
+            <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
           </section>
@@ -3372,7 +3511,7 @@ export default function SpeechBrigade() {
             </InstructionBlock>
             <div className="button-row">
               <button className="primary" type="button" onClick={() => setScreen(gameConfig.setupScreen)}>Next</button>
-              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back</button>
+              <button className="secondary" type="button" onClick={goBack}>Back</button>
             </div>
           </section>
         );
@@ -3522,71 +3661,27 @@ export default function SpeechBrigade() {
           <section className="narrow">
             <p className="eyebrow">National Speech & Debate Association</p>
             <h1>Choose Your Event</h1>
-            <p className="lede">Select a speaking event to begin your practice.</p>
-            <div className="event-grid">
-              <button className="event-card" type="button" onClick={() => startMode("impromptu")}>
-                <span>Impromptu Speaking</span>
-                <small>Think quickly. Speak clearly.</small>
+            <div className="event-board">
+              <h2 className="event-group-title">Limited Prep</h2>
+              <h2 className="event-group-title">Prepared Speaking</h2>
+              <button className="event-card compact" type="button" onClick={() => startMode("impromptu")}>
+                <EventCardTitle name="Impromptu Speaking" />
               </button>
-              <button className="event-card" type="button" onClick={() => startMode("extemp")}>
-                <span>Extemporaneous Speaking</span>
-                <small>Research. Analyze. Deliver.</small>
+              <button className="event-card compact" type="button" onClick={() => startMode("extemp")}>
+                <EventCardTitle name="Extemporaneous Speaking" />
               </button>
-              <button className="event-card" type="button" onClick={() => setScreen("preparedSelection")}>
-                <span>Prepared Speaking</span>
-                <small>Develop your message. Perfect your delivery.</small>
-              </button>
-              <button className="event-card" type="button" onClick={() => setScreen("interpretationSelection")}>
-                <span>Interpretation</span>
-                <small>Bring stories and characters to life.</small>
-              </button>
+              {PREPARED_EVENT_IDS.map((eventId) => (
+                <button className="event-card compact" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
+                  <EventCardTitle name={PREPARED_EVENT_CONFIGS[eventId].name} />
+                </button>
+              ))}
+              <h2 className="event-group-title wide">Interpretation</h2>
+              {INTERPRETATION_EVENT_IDS.map((eventId) => (
+                <button className="event-card compact" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
+                  <EventCardTitle name={PREPARED_EVENT_CONFIGS[eventId].name} />
+                </button>
+              ))}
             </div>
-          </section>
-        );
-      case "preparedSelection":
-        return (
-          <section className="narrow">
-            <p className="eyebrow">Prepared Speaking</p>
-            <h1>Prepared Speaking</h1>
-            <p className="lede">Craft your message. Refine your performance.</p>
-            <div className="event-grid">
-              {PREPARED_EVENT_IDS.map((eventId) => {
-                const eventConfig = PREPARED_EVENT_CONFIGS[eventId];
-                return (
-                  <button className="event-card event-card-with-badge" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
-                    <span>{eventConfig.name}</span>
-                    <i className="event-acronym">{eventConfig.acronym}</i>
-                    <small>{eventConfig.shortDescription}</small>
-                  </button>
-                );
-              })}
-            </div>
-            <button className="secondary" type="button" onClick={() => setScreen("events")}>
-              Back
-            </button>
-          </section>
-        );
-      case "interpretationSelection":
-        return (
-          <section className="narrow">
-            <p className="eyebrow">Interpretation</p>
-            <h1>Interpretation</h1>
-            <p className="lede">Transform literature into a compelling performance.</p>
-            <div className="event-grid">
-              {INTERPRETATION_EVENT_IDS.map((eventId) => {
-                const eventConfig = PREPARED_EVENT_CONFIGS[eventId];
-                return (
-                  <button className="event-card event-card-with-badge" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
-                    <span>{eventConfig.name}</span>
-                    <i className="event-acronym">{eventConfig.acronym}</i>
-                    <small>{eventConfig.shortDescription}</small>
-                  </button>
-                );
-              })}
-            </div>
-            <button className="secondary" type="button" onClick={() => setScreen("events")}>
-              Back
-            </button>
           </section>
         );
       case "preparedEventIntro":
@@ -3601,48 +3696,24 @@ export default function SpeechBrigade() {
           );
         }
         return (
-          <section className="reading">
-            <p className="eyebrow">{selectedPreparedEvent.name} · {selectedPreparedEvent.acronym}</p>
-            <h1>{selectedPreparedEvent.welcomeTitle}</h1>
-            <InstructionBlock>
-              {selectedPreparedEvent.introParagraphs.map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
-              ))}
-              <p>{selectedPreparedEvent.objectiveParagraph}</p>
-              <p>{selectedPreparedEvent.expectationsParagraph}</p>
-              <p><strong>Time limit: 10 minutes.</strong></p>
-              <p>
-                For this practice flow, Speech Brigade uses a ten-minute base performance timer. Official tournament
-                requirements may vary by event, tournament, and season.
-              </p>
-              <p>{selectedPreparedEvent.futureWorkflowParagraph}</p>
-              <p>
-                After setup, you will move to your speech workspace, review upcoming document tools, and launch a
-                timed practice performance.
-              </p>
-            </InstructionBlock>
-            <div className="button-row">
-              <button className="primary" type="button" onClick={() => setScreen("speechWorkspace")}>Next</button>
-              <button className="secondary" type="button" onClick={() => setScreen(selectedPreparedEvent.category === "prepared" ? "preparedSelection" : "interpretationSelection")}>Back</button>
-            </div>
-          </section>
-        );
-      case "speechWorkspace":
-        if (!selectedPreparedEvent) {
-          return (
-            <section className="results">
-              <p className="eyebrow">No event selected</p>
-              <button className="secondary" type="button" onClick={() => setScreen("events")}>
-                Back to Events
-              </button>
-            </section>
-          );
-        }
-        return (
-          <section className="speech-workspace">
-            <p className="eyebrow">{selectedPreparedEvent.name} · {selectedPreparedEvent.acronym}</p>
-            <h1>Your Speech</h1>
-            <p className="lede">Upload your script to personalize your performance feedback, or continue without one.</p>
+          <section className="reading event-setup speech-workspace">
+            <h1>{selectedPreparedEvent.name}</h1>
+            {practicePrivacyOptions}
+            <details className="how-it-works">
+              <summary>{selectedPreparedEvent.shortDescription}</summary>
+              <InstructionBlock>
+                {selectedPreparedEvent.introParagraphs.map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+                <p>{selectedPreparedEvent.objectiveParagraph}</p>
+                <p>{selectedPreparedEvent.expectationsParagraph}</p>
+                <p>
+                  <strong>Time limit: 10 minutes.</strong> Official tournament requirements may vary by event,
+                  tournament, and season.
+                </p>
+                <p>{selectedPreparedEvent.futureWorkflowParagraph}</p>
+              </InstructionBlock>
+            </details>
             <input
               ref={scriptInputRef}
               className="visually-hidden"
@@ -3650,28 +3721,16 @@ export default function SpeechBrigade() {
               accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
               onChange={handleScriptFileChange}
             />
-            <div className="workspace-actions">
+            <div className="workspace-actions single">
               <button
                 className="workspace-card"
                 type="button"
+                disabled={preparedStage !== "setup"}
                 onClick={() => scriptInputRef.current?.click()}
               >
                 <span className="document-icon" aria-hidden="true" />
-                <strong>Upload Script</strong>
+                <strong>Upload Script (Optional)</strong>
                 <small>PDF, DOCX, TXT, MD, and RTF files are supported.</small>
-              </button>
-              <button
-                className="workspace-card primary-action"
-                type="button"
-                data-no-press-sound="true"
-                onClick={() => {
-                  audio.unlock();
-                  setPreparedResult(null);
-                  setScreen("preparedDeliveryCountdown");
-                }}
-              >
-                <strong>{preparedScript?.status === "ready" ? "Begin Speech" : "Continue Without Script"}</strong>
-                <small>Start a timed performance now. Uploading a script is optional.</small>
               </button>
             </div>
             {scriptUploadStatus ? <p className="script-status">{scriptUploadStatus}</p> : null}
@@ -3681,65 +3740,33 @@ export default function SpeechBrigade() {
                 <p>{preparedScript.message}</p>
               </div>
             ) : null}
-            <PracticePrivacyOptions
-              analysisEnabled={speechAnalysisEnabled}
-              saveRecordingEnabled={saveRecordingEnabled}
-              onAnalysisChange={(enabled) => {
-                if (enabled) audio.toggleOn();
-                else audio.toggleOff();
-                setSpeechAnalysisEnabled(enabled);
-                setRecordingError("");
-              }}
-              onSaveRecordingChange={(enabled) => {
-                if (enabled) audio.toggleOn();
-                else audio.toggleOff();
-                setSaveRecordingEnabled(enabled);
-                setRecordingError("");
-              }}
-            />
-            <button className="secondary" type="button" onClick={() => setScreen("preparedEventIntro")}>
+            <div className="setup-step delivery-layout" ref={preparedStage === "setup" ? undefined : latestSetupStepRef}>
+              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? (
+                recordingError ? (
+                  <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+                ) : (
+                  <RecordingNotice />
+                )
+              ) : null}
+              <TimerPanel
+                label="Performance"
+                seconds={selectedPreparedEvent.performanceDurationSeconds}
+                buttonLabel="I'm done"
+                timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
+                active={preparedStage === "performance"}
+                onStart={() => {
+                  audio.unlock();
+                  setPreparedResult(null);
+                  setPreparedStage("performance");
+                }}
+                onComplete={handlePreparedPerformanceComplete}
+                onWarningSecond={warningTone}
+              />
+              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? <RecordingPrivacyFooter /> : null}
+            </div>
+            <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
-          </section>
-        );
-      case "preparedDeliveryCountdown":
-        return (
-          <DeliveryCountdown
-            onDone={() => setScreen("preparedPerformance")}
-            onWarningSecond={warningTone}
-          />
-        );
-      case "preparedPerformance":
-        if (!selectedPreparedEvent) {
-          return (
-            <section className="results">
-              <p className="eyebrow">No event selected</p>
-              <button className="secondary" type="button" onClick={() => setScreen("events")}>
-                Back to Events
-              </button>
-            </section>
-          );
-        }
-        return (
-          <section className="delivery-layout">
-            {speechAnalysisEnabled || saveRecordingEnabled ? (
-              recordingError ? (
-                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
-              ) : (
-                <RecordingNotice />
-              )
-            ) : null}
-            <TimerPanel
-              label="Performance"
-              seconds={selectedPreparedEvent.performanceDurationSeconds}
-              buttonLabel="I'm done"
-              topic={`${selectedPreparedEvent.name} (${selectedPreparedEvent.acronym})`}
-              topicLabel={selectedPreparedEvent.id === "duo" ? "Two-person performance" : "Event"}
-              timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
-              onComplete={handlePreparedPerformanceComplete}
-              onWarningSecond={warningTone}
-            />
-            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
           </section>
         );
       case "preparedResults": {
@@ -3812,7 +3839,7 @@ export default function SpeechBrigade() {
                 Sign In
               </button>
             )}
-            <button className="secondary" type="button" onClick={goHome}>
+            <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
           </section>
@@ -3899,7 +3926,7 @@ export default function SpeechBrigade() {
                 </form>
               </>
             )}
-            <button className="secondary" type="button" onClick={goHome}>
+            <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
           </section>
@@ -3923,7 +3950,7 @@ export default function SpeechBrigade() {
                 Sign Out
               </button>
             ) : null}
-            <button className="secondary" type="button" onClick={goHome}>
+            <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
           </section>
@@ -3959,142 +3986,100 @@ export default function SpeechBrigade() {
                 )}
               </div>
             )}
-            <button className="secondary" type="button" onClick={goHome}>
+            <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
           </section>
         );
       case "impromptuIntro":
         return (
-          <section className="reading">
-            <h1>Welcome to Impromptu Speaking</h1>
-            <InstructionBlock>
-              <p>You will receive three possible topics and choose one to speak about.</p>
-              <p>Your goal is to quickly develop a clear central idea, organize your thoughts, and deliver a complete speech with an introduction, body, and conclusion.</p>
-              <p>You have <strong>7 total minutes for preparation and delivery</strong>.</p>
-              <p>Before beginning, you will choose how to divide that time: <strong>0:00 + 7:00</strong>, <strong>1:00 + 6:00</strong>, <strong>2:00 + 5:00</strong>, <strong>3:00 + 4:00</strong>, or <strong>4:00 + 3:00</strong>.</p>
-              <p>First, you will spin for a <strong>theme</strong>. Then, three topics related to your theme will be generated one at a time.</p>
-              <p>Once all three topics appear, you will have <strong>30 seconds to choose</strong>. If time expires, the first topic will be selected automatically.</p>
-              <p>After choosing a topic, your preparation timer begins. When preparation ends, you will receive a <strong>5-second countdown</strong> before delivery begins.</p>
-            </InstructionBlock>
-            <PracticePrivacyOptions
-              analysisEnabled={speechAnalysisEnabled}
-              saveRecordingEnabled={saveRecordingEnabled}
-	              onAnalysisChange={(enabled) => {
-	                if (enabled) audio.toggleOn();
-	                else audio.toggleOff();
-	                setSpeechAnalysisEnabled(enabled);
-	                setRecordingError("");
-	              }}
-	              onSaveRecordingChange={(enabled) => {
-	                if (enabled) audio.toggleOn();
-	                else audio.toggleOff();
-	                setSaveRecordingEnabled(enabled);
-	                setRecordingError("");
-	              }}
-            />
-            <button className="primary" type="button" onClick={() => setScreen("timeAllocation")}>Next</button>
-          </section>
-        );
-      case "timeAllocation":
-        return (
-          <section className="allocation">
-            <p className="eyebrow">Impromptu setup</p>
-            <h1>Divide your seven minutes</h1>
-            <p className="lede">Choose how much time you want to prepare.</p>
-            <div className="allocation-display">
-              <div>
-                <span>Prep</span>
-                <strong>{formatTime(round.prepSecondsAllocated)}</strong>
+          <section className="reading event-setup">
+            <h1>Impromptu Speaking</h1>
+            {practicePrivacyOptions}
+            <details className="how-it-works">
+              <summary>How it works</summary>
+              <InstructionBlock>
+                <p>Split <strong>7 minutes</strong> between prep and delivery.</p>
+                <p>Spin for a <strong>theme</strong>, then get three related topics.</p>
+                <p>You have <strong>30 seconds to choose</strong> a topic, or the first one is picked for you.</p>
+                <p>Prep starts right away, followed by a <strong>5-second countdown</strong> into delivery.</p>
+              </InstructionBlock>
+            </details>
+            <div className="setup-step allocation">
+              <p className="eyebrow">Divide your seven minutes</p>
+              <div className="allocation-display">
+                <div>
+                  <span>Prep</span>
+                  <strong>{formatTime(round.prepSecondsAllocated)}</strong>
+                </div>
+                <div className="balance-line" aria-hidden="true" />
+                <div>
+                  <span>Delivery</span>
+                  <strong>{formatTime(round.deliverySecondsAllocated)}</strong>
+                </div>
               </div>
-              <div className="balance-line" aria-hidden="true" />
-              <div>
-                <span>Delivery</span>
-                <strong>{formatTime(round.deliverySecondsAllocated)}</strong>
+              <input
+                aria-label="Preparation time"
+                className="time-slider"
+                type="range"
+                min="0"
+                max="4"
+                step="1"
+                value={allocationIndex}
+                disabled={themeSpinning || Boolean(lockedChoice)}
+                onChange={(event) => setAllocatedTime(Number(event.target.value))}
+              />
+              <div className="slider-labels" aria-hidden="true">
+                <span>0:00</span>
+                <span>1:00</span>
+                <span>2:00</span>
+                <span>3:00</span>
+                <span>4:00</span>
               </div>
             </div>
-            <input
-              aria-label="Preparation time"
-              className="time-slider"
-              type="range"
-              min="0"
-              max="4"
-              step="1"
-              value={allocationIndex}
-              onChange={(event) => setAllocatedTime(Number(event.target.value))}
-            />
-            <div className="slider-labels" aria-hidden="true">
-              <span>0:00</span>
-              <span>1:00</span>
-              <span>2:00</span>
-              <span>3:00</span>
-              <span>4:00</span>
+            <div className="setup-step spin-screen">
+              <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
+              <div className={`theme-reel ${themeSpinning ? "spinning" : ""}`}>
+                <strong>{themeDisplay}</strong>
+              </div>
+              {round.impromptuTheme && !themeSpinning ? (
+                setupStage === "spin" ? (
+                  <button className="primary" type="button" onClick={() => setSetupStage("topics")}>Next</button>
+                ) : null
+              ) : (
+                <button className="primary" type="button" onClick={spinTheme} disabled={themeSpinning}>Spin</button>
+              )}
             </div>
-            <button className="primary" type="button" onClick={() => setScreen("themeSpin")}>Continue</button>
+            {setupStage !== "spin" ? (
+              <div className="setup-step spin-screen" ref={setupStage === "topics" ? latestSetupStepRef : undefined}>
+                <p className="eyebrow step-heading"><strong>Spin</strong> for a list of topics, and <strong>choose</strong> which to speak on</p>
+                <SlotWindows
+                  items={slotItems}
+                  activeIndex={activeSlot}
+                  onSelect={slotsDrawn ? (index) => chooseTopic(round.topicOptions[index]) : undefined}
+                  selectedValue={lockedChoice}
+                />
+                {slotsDrawn ? (
+                  <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+                ) : (
+                  <button className="primary" type="button" onClick={spinTopics} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
+                )}
+              </div>
+            ) : null}
+            {setupStage === "prep" ? (
+              <div className="setup-step" ref={latestSetupStepRef}>
+                <TimerPanel
+                  label="Preparation"
+                  seconds={round.prepSecondsAllocated}
+                  buttonLabel="I'm done"
+                  topic={round.selectedTopic}
+                  timerKey={`impromptu-prep-${round.selectedTopic}`}
+                  onComplete={handlePrepComplete}
+                  onWarningSecond={warningTone}
+                />
+              </div>
+            ) : null}
           </section>
-        );
-      case "themeSpin":
-        return (
-          <section className="spin-screen">
-            <p className="eyebrow">Theme draw</p>
-            <h1>Spin for your theme</h1>
-            <p className="lede">Your topic choices will be based on the theme you draw.</p>
-            <div className={`theme-reel ${themeSpinning ? "spinning" : ""}`}>
-              <strong>{themeDisplay}</strong>
-            </div>
-            <button className="primary" type="button" onClick={spinTheme} disabled={themeSpinning}>Spin</button>
-          </section>
-        );
-      case "themeResult":
-        return (
-          <section className="result-reveal">
-            <p>Your theme is</p>
-            <h1>{round.impromptuTheme}</h1>
-            <button className="primary" type="button" onClick={() => setScreen("topicSpin")}>Next</button>
-          </section>
-        );
-      case "topicSpin":
-        return (
-          <section className="spin-screen">
-            <p className="eyebrow">Topic draw</p>
-            <h1>Spin for your topics</h1>
-            <p className="lede">Three topics. One choice.</p>
-            <SlotWindows items={slotItems} activeIndex={activeSlot} />
-            <button className="primary" type="button" onClick={spinTopics} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
-          </section>
-        );
-      case "topicSelect":
-        return (
-          <section className="choice-screen">
-            <SelectionTimer timerKey={`topic-${round.topicOptions.join("|")}`} onComplete={() => chooseTopic(round.topicOptions[0])} onWarningSecond={warningTone} />
-            <h1>Your choices are</h1>
-            <div className="choice-grid">
-              {round.topicOptions.map((topic) => (
-                <button className={lockedChoice === topic ? "choice-card locked" : "choice-card"} type="button" key={topic} onClick={() => chooseTopic(topic)} disabled={Boolean(lockedChoice)}>
-                  {topic}
-                </button>
-              ))}
-            </div>
-          </section>
-        );
-      case "impromptuPrep":
-        return (
-          <TimerPanel
-            label="Preparation"
-            seconds={round.prepSecondsAllocated}
-            buttonLabel="I'm done"
-            topic={round.selectedTopic}
-            timerKey={`impromptu-prep-${round.selectedTopic}`}
-            onComplete={handlePrepComplete}
-            onWarningSecond={warningTone}
-          />
-        );
-      case "deliveryCountdown":
-        return (
-          <DeliveryCountdown
-            onDone={() => setScreen(round.mode === "extemp" ? "extempDelivery" : "impromptuDelivery")}
-            onWarningSecond={warningTone}
-          />
         );
       case "impromptuDelivery":
         return (
@@ -4141,71 +4126,46 @@ export default function SpeechBrigade() {
         );
       case "extempIntro":
         return (
-          <section className="reading">
-            <h1>Welcome to Extemporaneous Speaking</h1>
-            <InstructionBlock>
-              <p>Extemporaneous Speaking challenges you to answer a question about an important current event with a clear, organized, evidence-based speech.</p>
-              <p>You will receive <strong>three current-events questions</strong> and choose the question you want to answer.</p>
-              <p>You have <strong>30 seconds to select your question</strong>. If you do not choose before time expires, the first question will automatically be selected.</p>
-              <p>Once your question is selected, your <strong>30-minute preparation period</strong> begins.</p>
-              <p>Use your preparation time to research the issue, decide on a direct answer, organize your main points, and identify evidence and examples that support your argument.</p>
-              <p>When preparation ends, you will receive a <strong>5-second countdown</strong>. You will then have <strong>7 minutes</strong> to deliver your speech.</p>
-            </InstructionBlock>
-            <PracticePrivacyOptions
-              analysisEnabled={speechAnalysisEnabled}
-              saveRecordingEnabled={saveRecordingEnabled}
-	              onAnalysisChange={(enabled) => {
-	                if (enabled) audio.toggleOn();
-	                else audio.toggleOff();
-	                setSpeechAnalysisEnabled(enabled);
-	                setRecordingError("");
-	              }}
-	              onSaveRecordingChange={(enabled) => {
-	                if (enabled) audio.toggleOn();
-	                else audio.toggleOff();
-	                setSaveRecordingEnabled(enabled);
-	                setRecordingError("");
-	              }}
-            />
-            <button className="primary" type="button" onClick={() => setScreen("questionSpin")}>Next</button>
-          </section>
-        );
-      case "questionSpin":
-        return (
-          <section className="spin-screen">
-            <p className="eyebrow">Extemp draw</p>
-            <h1>Draw your questions</h1>
-            <p className="lede">Three questions will be selected from the current-events bank.</p>
-            <SlotWindows items={slotItems} activeIndex={activeSlot} large />
-            <button className="primary" type="button" onClick={spinQuestions} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
-          </section>
-        );
-      case "questionSelect":
-        return (
-          <section className="choice-screen question-choice">
-            <SelectionTimer timerKey={`question-${round.questionOptions.map((question) => question.question).join("|")}`} onComplete={() => chooseQuestion(round.questionOptions[0])} onWarningSecond={warningTone} />
-            <h1>Choose your question</h1>
-            <div className="choice-grid questions">
-              {round.questionOptions.map((question) => (
-                <button className={lockedChoice === question.question ? "choice-card locked" : "choice-card"} type="button" key={question.question} onClick={() => chooseQuestion(question)} disabled={Boolean(lockedChoice)}>
-                  <span>{question.category}</span>
-                  {question.question}
-                </button>
-              ))}
+          <section className="reading event-setup">
+            <h1>Extemporaneous Speaking</h1>
+            {practicePrivacyOptions}
+            <details className="how-it-works">
+              <summary>How it works</summary>
+              <InstructionBlock>
+                <p>Answer a current-events question with a clear, organized, evidence-based speech.</p>
+                <p>Draw <strong>three questions</strong> and pick one within <strong>30 seconds</strong>, or the first one is picked for you.</p>
+                <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong> after a 5-second countdown.</p>
+              </InstructionBlock>
+            </details>
+            <div className="setup-step spin-screen">
+              <p className="eyebrow step-heading"><strong>Spin</strong> for a list of questions, and <strong>choose</strong> which to speak on</p>
+              <SlotWindows
+                items={slotItems}
+                activeIndex={activeSlot}
+                large
+                onSelect={slotsDrawn ? (index) => chooseQuestion(round.questionOptions[index]) : undefined}
+                selectedValue={lockedChoice}
+              />
+              {slotsDrawn ? (
+                <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+              ) : (
+                <button className="primary" type="button" onClick={spinQuestions} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
+              )}
             </div>
+            {setupStage === "prep" ? (
+              <div className="setup-step" ref={latestSetupStepRef}>
+                <TimerPanel
+                  label="Preparation"
+                  seconds={1800}
+                  buttonLabel="I'm done"
+                  topic={selectedPrompt}
+                  timerKey={`extemp-prep-${selectedPrompt}`}
+                  onComplete={handlePrepComplete}
+                  onWarningSecond={warningTone}
+                />
+              </div>
+            ) : null}
           </section>
-        );
-      case "extempPrep":
-        return (
-          <TimerPanel
-            label="Preparation"
-            seconds={1800}
-            buttonLabel="I'm done"
-            topic={selectedPrompt}
-            timerKey={`extemp-prep-${selectedPrompt}`}
-            onComplete={handlePrepComplete}
-            onWarningSecond={warningTone}
-          />
         );
       case "extempDelivery":
         return (
@@ -4351,7 +4311,7 @@ export default function SpeechBrigade() {
 	            <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
 	              <span>Speech</span> Brigade
 	            </button>
-	            <div className="mode-label">{modeLabel}</div>
+	            <div className="mode-label" />
 	          </>
 	        )}
 	        <nav className="header-actions" aria-label="Account and recordings">
