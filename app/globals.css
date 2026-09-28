@@ -1544,34 +1544,6 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-.theme-reel {
-  display: grid;
-  place-items: center;
-  width: min(680px, 100%);
-  min-height: clamp(9rem, 22vw, 15rem);
-  margin: clamp(2rem, 5vw, 3rem) auto 1.4rem;
-  overflow: hidden;
-  border: 1px solid rgba(201, 164, 91, 0.34);
-  border-radius: 32px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.4), transparent),
-    linear-gradient(145deg, rgba(255, 252, 244, 0.95), rgba(246, 238, 219, 0.85));
-  color: var(--ink);
-  box-shadow: 0 30px 90px rgba(10, 12, 20, 0.24);
-}
-
-.theme-reel strong {
-  padding: 1rem;
-  font-family: var(--display);
-  font-size: clamp(2.5rem, 8vw, 6rem);
-  font-weight: 500;
-  line-height: 0.95;
-}
-
-.theme-reel.spinning strong {
-  animation: reelBlur 150ms linear infinite;
-}
-
 .slot-stack {
   display: grid;
   gap: 0.85rem;
@@ -1953,17 +1925,6 @@ h1 {
     opacity: 1;
     filter: blur(0);
     transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes reelBlur {
-  0% {
-    transform: translateY(-14%);
-    filter: blur(2px);
-  }
-  100% {
-    transform: translateY(14%);
-    filter: blur(2px);
   }
 }
 
@@ -3562,4 +3523,85 @@ h1 {
   color: var(--gold);
   font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* Topic spinner card and buttons (off_the_cuff topic-spinner spec, variant A §3.2). */
+.topic-spinner-card {
+  position: relative;
+  width: min(768px, 100%);
+  margin: 2rem auto 1.4rem;
+  padding: 64px 24px 24px;
+  border: 2px solid #9c9284;
+  border-radius: 24px;
+  background: #f9f5eb;
+  box-shadow: 0 2px 12px rgba(19, 82, 72, 0.08);
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+.topic-spinner-card .spinner-root {
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+.topic-spinner-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.topic-spinner-spin,
+.topic-spinner-use {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 32px;
+  border-radius: 9999px;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.topic-spinner-spin {
+  border: 0;
+  background: #135248;
+  color: #f5f0e8;
+  box-shadow: 0 10px 15px -3px rgb(19 82 72 / 0.2), 0 4px 6px -4px rgb(19 82 72 / 0.2);
+}
+
+.topic-spinner-spin:hover {
+  background: #1d6e5f;
+}
+
+.topic-spinner-use {
+  border: 2px solid #000;
+  background: transparent;
+  color: #000;
+}
+
+.topic-spinner-use:hover:not(:disabled) {
+  background: rgb(0 0 0 / 0.05);
+}
+
+.topic-spinner-use:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (min-width: 640px) {
+  .topic-spinner-actions {
+    flex-direction: row;
+  }
+}
+
+@media (min-width: 768px) {
+  .topic-spinner-card {
+    padding: 80px 40px 40px;
+  }
 }

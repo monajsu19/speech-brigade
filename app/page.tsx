@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
+import { TopicSpinner } from "./TopicSpinner";
 
 type EventMode = "impromptu" | "extemp";
 type PreparedEventId = "oo" | "inf" | "di" | "hi" | "duo" | "poi";
@@ -964,6 +965,8 @@ function formatClock(totalSeconds: number) {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
+
+const themeNames = themeBank.map((item) => item.theme);
 
 function randomItem<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
@@ -2477,7 +2480,8 @@ export default function SpeechBrigade() {
   }, []);
   const [round, setRound] = useState<RoundState>(initialRound);
   const [allocationIndex, setAllocationIndex] = useState(2);
-  const [themeDisplay, setThemeDisplay] = useState("READY");
+  // Bumped to remount the theme spinner reel when a round resets.
+  const [themeReelKey, setThemeReelKey] = useState(0);
   const [themeSpinning, setThemeSpinning] = useState(false);
   const [slotItems, setSlotItems] = useState<SlotItem[]>([{ value: "—" }, { value: "—" }, { value: "—" }]);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
@@ -2672,7 +2676,8 @@ export default function SpeechBrigade() {
     setSelectedGameId(null);
     setGameSession(null);
     setGameRevealSpinning(false);
-    setThemeDisplay("READY");
+    setThemeReelKey((key) => key + 1);
+    setThemeSpinning(false);
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setActiveSlot(null);
     setLockedChoice("");
@@ -2684,7 +2689,8 @@ export default function SpeechBrigade() {
     setRound({ ...initialRound, mode });
     setAllocationIndex(2);
     setSetupStage("spin");
-    setThemeDisplay("READY");
+    setThemeReelKey((key) => key + 1);
+    setThemeSpinning(false);
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
     setActiveSlot(null);
     setLockedChoice("");
@@ -3141,7 +3147,8 @@ export default function SpeechBrigade() {
         prepSecondsAllocated: current.prepSecondsAllocated,
         deliverySecondsAllocated: current.deliverySecondsAllocated,
       }));
-      setThemeDisplay("READY");
+      setThemeReelKey((key) => key + 1);
+      setThemeSpinning(false);
       setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
       setLockedChoice("");
       setSetupStage("spin");
@@ -3162,24 +3169,14 @@ export default function SpeechBrigade() {
     setScreen("preparedEventIntro");
   };
 
-  const spinTheme = () => {
-    if (themeSpinning) return;
-    audio.unlock();
+  const startThemeSpin = () => {
     setThemeSpinning(true);
-    const chosen = randomItem(themeBank);
-    let iterations = 0;
-    const interval = window.setInterval(() => {
-      iterations += 1;
-      audio.slotTick();
-      setThemeDisplay(randomItem(themeBank).theme);
-      if (iterations > 22) {
-        window.clearInterval(interval);
-        setThemeDisplay(chosen.theme);
-        setRound((current) => ({ ...current, impromptuTheme: chosen.theme }));
-        setThemeSpinning(false);
-        audio.ding();
-      }
-    }, 72 + Math.min(iterations * 8, 90));
+    setRound((current) => ({ ...current, impromptuTheme: "" }));
+  };
+
+  const landTheme = (theme: string) => {
+    setRound((current) => ({ ...current, impromptuTheme: theme }));
+    setThemeSpinning(false);
   };
 
   const spinSequentialSlots = (items: SlotItem[]) => {
@@ -4039,16 +4036,16 @@ export default function SpeechBrigade() {
             </div>
             <div className="setup-step spin-screen">
               <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
-              <div className={`theme-reel ${themeSpinning ? "spinning" : ""}`}>
-                <strong>{themeDisplay}</strong>
-              </div>
-              {round.impromptuTheme && !themeSpinning ? (
-                setupStage === "spin" ? (
-                  <button className="primary" type="button" onClick={() => setSetupStage("topics")}>Next</button>
-                ) : null
-              ) : (
-                <button className="primary" type="button" onClick={spinTheme} disabled={themeSpinning}>Spin</button>
-              )}
+              <TopicSpinner
+                key={themeReelKey}
+                items={themeNames}
+                onSpinStart={startThemeSpin}
+                onLand={landTheme}
+                useLabel="Use this theme"
+                onUse={() => setSetupStage("topics")}
+                canUse={Boolean(round.impromptuTheme) && !themeSpinning}
+                showActions={setupStage === "spin"}
+              />
             </div>
             {setupStage !== "spin" ? (
               <div className="setup-step spin-screen" ref={setupStage === "topics" ? latestSetupStepRef : undefined}>
