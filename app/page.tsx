@@ -11,17 +11,12 @@ type PreparedEventId = "oo" | "inf" | "di" | "hi" | "duo" | "poi";
 type AnalysisMode = EventMode | PreparedEventId;
 type PreparedEventCategory = "prepared" | "interpretation";
 type CompletionStatus = "manual" | "expired";
-type SpeakingGameId = "hotSeat" | "wordFusion" | "storyRelay" | "landPlane";
+type SpeakingGameId = "hotSeat" | "wordFusion" | "storyRelay" | "landPlane" | "threeTwoOne" | "weighing";
 type Screen =
   | "landing"
   | "gamesSelection"
-  | "gameInstructions"
-  | "hotSeatReveal"
-  | "wordFusionSpin"
-  | "storyRelaySetup"
-  | "landPlaneSetup"
-  | "gamePrepCountdown"
-  | "gameChallenge"
+  | "gameSetup"
+  | "gameRounds"
   | "gameResults"
   | "eventsAuth"
   | "events"
@@ -46,12 +41,7 @@ const RECORDING_TOO_LARGE_MESSAGE = "Congrats! You spoke so much we can't handle
 // Mid-flow screens (spins, countdowns, timers, recording, auth redirects) never get their own
 // browser history entry, so going back skips over them to the last screen the user chose.
 const TRANSIENT_SCREENS = new Set<Screen>([
-  "hotSeatReveal",
-  "wordFusionSpin",
-  "storyRelaySetup",
-  "landPlaneSetup",
-  "gamePrepCountdown",
-  "gameChallenge",
+  "gameRounds",
   "eventsAuth",
   "signIn",
   "impromptuDelivery",
@@ -209,18 +199,12 @@ interface InfoModalContent {
 interface SpeakingGameConfig {
   id: SpeakingGameId;
   name: string;
-  tagline: string;
-  description: string;
-  durationLabel: string;
-  durationSeconds: number;
-  icon: string;
-  welcomeTitle: string;
-  instructionParagraphs: string[];
-  setupScreen: Screen;
-  challengeLabel: string;
-  resultTitle: string;
+  // Team drills are grouped separately from the solo games.
+  team: boolean;
+  howItWorks: React.ReactNode[];
   tip: string;
-  retryLabel: string;
+  // Each round is one timed speech; most games have a single round.
+  rounds: { label: string; seconds: number }[];
 }
 
 interface SpeechOutline {
@@ -236,10 +220,11 @@ interface SpeakingGameSession {
   words?: string[];
   openingLine?: string;
   twists?: string[];
-  activeTwistIndex?: number;
   outline?: SpeechOutline;
-  elapsedSeconds?: number;
-  completion?: CompletionStatus;
+  argument?: string;
+  scenarios?: string[];
+  roundIndex?: number;
+  roundElapsedSeconds?: number[];
 }
 
 type RoundState = {
@@ -416,98 +401,85 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
   hotSeat: {
     id: "hotSeat",
     name: "The Hot Seat",
-    tagline: "Think fast. Speak with confidence.",
-    description: "A rapid-fire challenge where students respond to unexpected questions.",
-    durationLabel: "90 sec",
-    durationSeconds: 90,
-    icon: "?",
-    welcomeTitle: "Welcome to The Hot Seat",
-    instructionParagraphs: [
-      "Think fast. Speak with confidence.",
-      "You will receive a surprise question and have just a few seconds to prepare.",
-      "Your challenge is to deliver a complete response in 90 seconds.",
-      "Start with a clear answer, develop your ideas using a reason or example, and finish with a strong conclusion.",
-      "You do not need a perfect answer. Focus on thinking clearly and keeping your speech moving.",
-      "When you are ready, begin the challenge.",
+    team: false,
+    howItWorks: [
+      <>Reveal a <strong>surprise question</strong>.</>,
+      <>Answer it in <strong>90 seconds</strong>: a clear answer, a reason or example, and a strong finish.</>,
+      <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    setupScreen: "hotSeatReveal",
-    challengeLabel: "Your Response",
-    resultTitle: "You survived the Hot Seat.",
     tip: "A strong short response clearly answers the question, develops an idea, and finishes with purpose.",
-    retryLabel: "Try Another Question",
+    rounds: [{ label: "Response", seconds: 90 }],
   },
   wordFusion: {
     id: "wordFusion",
     name: "Word Fusion",
-    tagline: "Three words. One coherent speech.",
-    description: "Connect three random words naturally in a single creative speech.",
-    durationLabel: "60 sec",
-    durationSeconds: 60,
-    icon: "3",
-    welcomeTitle: "Welcome to Word Fusion",
-    instructionParagraphs: [
-      "Three random words. One connected speech.",
-      "You will spin three slot machines to reveal three unrelated words.",
-      "Your challenge is to connect all three words naturally in a single 60-second speech.",
-      "You can tell a story, make an argument, create an analogy, or find an unexpected connection.",
-      "The goal is to make your speech feel coherent rather than simply listing the words.",
-      "You will have five seconds to prepare before speaking.",
+    team: false,
+    howItWorks: [
+      <>Spin for <strong>three random words</strong>.</>,
+      <>Connect all three in one <strong>60-second</strong> speech: a story, an argument, or an analogy.</>,
+      <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    setupScreen: "wordFusionSpin",
-    challengeLabel: "Connect the Words",
-    resultTitle: "Connection complete.",
     tip: "The strongest connections create one unified idea rather than three unrelated observations.",
-    retryLabel: "Spin Again",
+    rounds: [{ label: "Speech", seconds: 60 }],
   },
   storyRelay: {
     id: "storyRelay",
     name: "Story Relay",
-    tagline: "Keep the story alive.",
-    description: "Continue an evolving story while adapting to unexpected plot twists.",
-    durationLabel: "3 min",
-    durationSeconds: 180,
-    icon: "↗",
-    welcomeTitle: "Welcome to Story Relay",
-    instructionParagraphs: [
-      "Every great story begins somewhere. Where it goes next is up to you.",
-      "You will receive the opening line of a story.",
-      "Your challenge is to continue it out loud.",
-      "As you speak, unexpected plot twists will appear. You must incorporate each twist into your story while keeping the narrative moving.",
-      "The challenge lasts three minutes.",
-      "Focus on creativity, clear storytelling, and connecting each new development to what came before.",
+    team: false,
+    howItWorks: [
+      <>Reveal the <strong>opening line</strong> of a story and continue it for <strong>3 minutes</strong>.</>,
+      <><strong>Plot twists</strong> appear as you speak. Work each one into the story.</>,
+      <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    setupScreen: "storyRelaySetup",
-    challengeLabel: "Story Relay",
-    resultTitle: "Story complete.",
     tip: "Strong improvisational storytelling connects new developments to the existing narrative rather than abandoning the story each time something changes.",
-    retryLabel: "New Story",
+    rounds: [{ label: "Story", seconds: 180 }],
   },
   landPlane: {
     id: "landPlane",
     name: "Land the Plane",
-    tagline: "Finish with impact.",
-    description: "Deliver a concise, memorable conclusion to a partially built speech.",
-    durationLabel: "20 sec",
-    durationSeconds: 20,
-    icon: "⌁",
-    welcomeTitle: "Welcome to Land the Plane",
-    instructionParagraphs: [
-      "A great speech deserves a great ending.",
-      "You will receive a short speech outline containing a topic, central argument, and supporting points.",
-      "Your challenge is to deliver a compelling conclusion in just 20 seconds.",
-      "Reinforce the central message, bring the ideas together, and finish with a memorable final statement.",
-      "Avoid introducing an entirely new argument at the end.",
-      "Make your final words count.",
+    team: false,
+    howItWorks: [
+      <>Reveal a <strong>speech outline</strong>: a topic, a central message, and supporting ideas.</>,
+      <>Deliver its conclusion in <strong>20 seconds</strong> without adding a new argument.</>,
+      <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    setupScreen: "landPlaneSetup",
-    challengeLabel: "Your Conclusion",
-    resultTitle: "Perfect landing.",
     tip: "A strong conclusion reinforces the central message, connects the main ideas, and leaves the audience with a memorable final thought.",
-    retryLabel: "Try Another Speech",
+    rounds: [{ label: "Conclusion", seconds: 20 }],
+  },
+  threeTwoOne: {
+    id: "threeTwoOne",
+    name: "3-2-1 Drill",
+    team: true,
+    howItWorks: [
+      <>Spin for an <strong>argument</strong>, one piece of a full case, and craft it as a team.</>,
+      <>Deliver it in <strong>3 minutes</strong>, then <strong>2</strong>, then <strong>1</strong>, keeping the same relevant details.</>,
+      <>Each round begins when you press <strong>Start</strong>.</>,
+    ],
+    tip: "As the time shrinks, keep the claim, the warrant, and the impact. Cut the filler, not the substance.",
+    rounds: [
+      { label: "3 minutes", seconds: 180 },
+      { label: "2 minutes", seconds: 120 },
+      { label: "1 minute", seconds: 60 },
+    ],
+  },
+  weighing: {
+    id: "weighing",
+    name: "Weighing Drill",
+    team: true,
+    howItWorks: [
+      <>Spin for <strong>two ridiculous scenarios</strong>.</>,
+      <>Speaker 1 argues the first is worse, and Speaker 2 argues the second is worse, for <strong>1 minute</strong> each.</>,
+      <>Each speaker&apos;s timer begins when you press <strong>Start</strong>.</>,
+    ],
+    tip: "Strong weighing compares directly. Don't just explain why your scenario is bad; explain why it is worse than theirs.",
+    rounds: [
+      { label: "Speaker 1", seconds: 60 },
+      { label: "Speaker 2", seconds: 60 },
+    ],
   },
 };
 
-const SPEAKING_GAME_IDS: SpeakingGameId[] = ["hotSeat", "wordFusion", "storyRelay", "landPlane"];
+const SPEAKING_GAME_IDS: SpeakingGameId[] = ["hotSeat", "wordFusion", "storyRelay", "landPlane", "threeTwoOne", "weighing"];
 
 const hotSeatQuestions = [
   "What is one lesson everyone should learn before graduating high school?",
@@ -600,6 +572,52 @@ const storyTwists = [
   "A celebration is interrupted.",
   "An important deadline suddenly moves closer.",
   "The original problem was not what it seemed.",
+];
+
+const threeTwoOneArguments = [
+  "Standardized tests measure test-taking skill more than learning.",
+  "Social media does more harm than good to teenagers' mental health.",
+  "Homework should be optional in middle school.",
+  "Cities should make public transportation free.",
+  "Schools should start later in the morning.",
+  "Every high school student should learn personal finance.",
+  "Cell phones should be banned during the school day.",
+  "College athletes should be paid.",
+  "The voting age should be lowered to 16.",
+  "Community service should be a graduation requirement.",
+  "Year-round school would improve student learning.",
+  "Zoos do more good than harm for animals.",
+  "Space exploration is worth its cost.",
+  "Plastic bags should be banned nationwide.",
+  "Remote work is better for society than office work.",
+  "Artificial intelligence should be allowed in classrooms.",
+  "Uniforms improve the school environment.",
+  "Video games can be a valuable learning tool.",
+  "Fast food companies should not advertise to children.",
+  "Four-day school weeks would benefit students.",
+];
+
+const weighingScenarios = [
+  "The ocean turns to soda.",
+  "All dogs turn into bears.",
+  "Gravity turns off every Tuesday.",
+  "Everyone can only speak in rhymes.",
+  "All trees become spaghetti.",
+  "Cats gain the right to vote.",
+  "The sun turns bright green.",
+  "Every car becomes a shopping cart.",
+  "Rain falls upward.",
+  "Everyone swaps bodies with their neighbor once a week.",
+  "All music becomes kazoo music.",
+  "Pigeons become the size of horses.",
+  "Every door leads to a random place on Earth.",
+  "Nobody can ever sit down again.",
+  "Chocolate becomes as rare as diamonds.",
+  "The moon moves twice as close to Earth.",
+  "All furniture becomes inflatable.",
+  "Everyone sneezes glitter.",
+  "Snow falls every day, everywhere, forever.",
+  "Humans lose the ability to whisper.",
 ];
 
 const landPlaneOutlines: SpeechOutline[] = [
@@ -1213,11 +1231,19 @@ function TimerPanel({
 }
 
 function GamePromptDisplay({ session, compact = false }: { session: SpeakingGameSession; compact?: boolean }) {
-  if (session.gameId === "hotSeat" && session.question) {
+  const textPrompt =
+    session.gameId === "hotSeat"
+      ? { label: "Your question", text: session.question }
+      : session.gameId === "storyRelay"
+        ? { label: "Opening line", text: session.openingLine }
+        : session.gameId === "threeTwoOne"
+          ? { label: "Your argument", text: session.argument }
+          : null;
+  if (textPrompt?.text) {
     return (
-      <div className={`game-prompt-card ${compact ? "compact" : ""}`}>
-        <span>Question</span>
-        <strong>{session.question}</strong>
+      <div className="topic-banner">
+        <span>{textPrompt.label}</span>
+        <strong>{textPrompt.text}</strong>
       </div>
     );
   }
@@ -1232,20 +1258,155 @@ function GamePromptDisplay({ session, compact = false }: { session: SpeakingGame
     );
   }
 
-  if (session.gameId === "storyRelay" && session.openingLine) {
-    return (
-      <div className={`game-prompt-card ${compact ? "compact" : ""}`}>
-        <span>Opening Line</span>
-        <strong>{session.openingLine}</strong>
-      </div>
-    );
-  }
-
   if (session.gameId === "landPlane" && session.outline) {
     return <SpeechOutlineCard outline={session.outline} compact={compact} />;
   }
 
+  if (session.gameId === "weighing" && session.scenarios?.length === 2) {
+    return (
+      <div className={`weighing-matchup ${compact ? "compact" : ""}`}>
+        {session.scenarios.map((scenario, index) => (
+          <div
+            className={`game-prompt-card compact ${session.roundIndex === index ? "active" : ""}`}
+            key={scenario}
+          >
+            <span>Speaker {index + 1}: this is worse</span>
+            <strong>{scenario}</strong>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return null;
+}
+
+// Every game's timer page: the prompt, a round tracker for multi-round drills, and one timer
+// per round that waits for Start, like the speech practice timers.
+function GameTimer({
+  config,
+  session,
+  started,
+  onStart,
+  onRoundComplete,
+  onWarningSecond,
+  onTwist,
+}: {
+  config: SpeakingGameConfig;
+  session: SpeakingGameSession;
+  started: boolean;
+  onStart: () => void;
+  onRoundComplete: (elapsed: number) => void;
+  onWarningSecond: (second: number) => void;
+  onTwist: () => void;
+}) {
+  const roundIndex = session.roundIndex || 0;
+  const round = config.rounds[roundIndex];
+  if (!round) return null;
+  const isLast = roundIndex === config.rounds.length - 1;
+
+  return (
+    <>
+      {config.rounds.length > 1 ? (
+        <ol className="drill-rounds" aria-label="Rounds">
+          {config.rounds.map((item, index) => (
+            <li
+              key={item.label}
+              className={index === roundIndex ? "active" : index < roundIndex ? "done" : ""}
+              aria-current={index === roundIndex ? "step" : undefined}
+            >
+              {item.label}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      <GamePromptDisplay session={session} compact />
+      <GameRoundTimer
+        key={`${config.id}-${roundIndex}`}
+        label={round.label}
+        seconds={round.seconds}
+        buttonLabel={isLast ? "I'm done" : config.id === "weighing" ? "Next speaker" : "Next round"}
+        twists={session.gameId === "storyRelay" ? session.twists : undefined}
+        started={started}
+        onStart={onStart}
+        onComplete={onRoundComplete}
+        onWarningSecond={onWarningSecond}
+        onTwist={onTwist}
+      />
+    </>
+  );
+}
+
+function GameRoundTimer({
+  label,
+  seconds,
+  buttonLabel,
+  twists,
+  started,
+  onStart,
+  onComplete,
+  onWarningSecond,
+  onTwist,
+}: {
+  label: string;
+  seconds: number;
+  buttonLabel: string;
+  // Story Relay: twists appear at 2:00, 1:00, and 0:30 remaining.
+  twists?: string[];
+  started: boolean;
+  onStart: () => void;
+  onComplete: (elapsed: number) => void;
+  onWarningSecond: (second: number) => void;
+  onTwist: () => void;
+}) {
+  const { remaining, finishNow, progress } = useCountdownTimer({
+    seconds,
+    active: started,
+    onComplete: (elapsed) => onComplete(elapsed),
+    onWarningSecond,
+    timerKey: label,
+  });
+  const urgent = remaining <= 5 && remaining > 0;
+  const twistThresholds = [120, 60, 30];
+  const twistCount = started && twists ? twistThresholds.filter((at) => remaining <= at).length : 0;
+  const shownTwistsRef = useRef(0);
+
+  useEffect(() => {
+    if (twistCount > shownTwistsRef.current) {
+      shownTwistsRef.current = twistCount;
+      onTwist();
+    }
+  }, [twistCount, onTwist]);
+
+  const visibleTwist = twists && twistCount > 0 ? twists[twistCount - 1] : null;
+
+  return (
+    <section className={`timer-stage ${urgent ? "urgent" : ""}`}>
+      {visibleTwist ? (
+        <div className="plot-twist-card" key={visibleTwist}>
+          <span>Plot Twist</span>
+          <strong>{visibleTwist}</strong>
+        </div>
+      ) : null}
+      <div className="timer-card">
+        <div className="timer-ring" style={{ "--progress": `${Math.min(1, Math.max(0, progress)) * 360}deg` } as React.CSSProperties}>
+          <div>
+            <span>{label}</span>
+            <strong>{formatTime(remaining)}</strong>
+          </div>
+        </div>
+        {started ? (
+          <button className="secondary big-action" type="button" onClick={finishNow}>
+            {buttonLabel}
+          </button>
+        ) : (
+          <button className="primary big-action" type="button" onClick={onStart}>
+            Start
+          </button>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function SpeechOutlineCard({ outline, compact = false }: { outline: SpeechOutline; compact?: boolean }) {
@@ -1269,109 +1430,6 @@ function SpeechOutlineCard({ outline, compact = false }: { outline: SpeechOutlin
       </div>
       <p className="outline-direction">{outline.direction}</p>
     </div>
-  );
-}
-
-function GamePrepCountdown({
-  config,
-  session,
-  onDone,
-  onWarningSecond,
-}: {
-  config: SpeakingGameConfig;
-  session: SpeakingGameSession;
-  onDone: () => void;
-  onWarningSecond: (second: number) => void;
-}) {
-  const { remaining } = useCountdownTimer({
-    seconds: 5,
-    active: true,
-    onComplete: () => onDone(),
-    onWarningSecond,
-    timerKey: `game-prep-${config.id}-${JSON.stringify(session)}`,
-  });
-  const count = Math.max(1, Math.ceil(remaining));
-
-  return (
-    <section className="game-countdown">
-      <p>{config.name}</p>
-      <h1>Get ready.</h1>
-      <GamePromptDisplay session={session} compact />
-      <div className="countdown-number" data-count={count}>
-        {count}
-      </div>
-    </section>
-  );
-}
-
-function SpeakingGameChallenge({
-  config,
-  session,
-  onComplete,
-  onWarningSecond,
-  onTwist,
-}: {
-  config: SpeakingGameConfig;
-  session: SpeakingGameSession;
-  onComplete: (elapsed: number, completion: CompletionStatus) => void;
-  onWarningSecond: (second: number) => void;
-  onTwist: () => void;
-}) {
-  const [activeTwistIndex, setActiveTwistIndex] = useState(-1);
-  const triggeredTwistsRef = useRef<Set<number>>(new Set());
-  const { remaining, finishNow, progress } = useCountdownTimer({
-    seconds: config.durationSeconds,
-    active: true,
-    onComplete,
-    onWarningSecond,
-    timerKey: `game-challenge-${config.id}-${JSON.stringify(session)}`,
-  });
-  const urgent = remaining <= 5 && remaining > 0;
-
-  useEffect(() => {
-    if (session.gameId !== "storyRelay") return;
-    const thresholds = [
-      { at: 120, index: 0 },
-      { at: 60, index: 1 },
-      { at: 30, index: 2 },
-    ];
-    const nextTwist = thresholds.find(({ at, index }) => remaining <= at && !triggeredTwistsRef.current.has(index));
-    if (!nextTwist) return;
-    triggeredTwistsRef.current.add(nextTwist.index);
-    setActiveTwistIndex(nextTwist.index);
-    onTwist();
-  }, [remaining, session.gameId, onTwist]);
-
-  const visibleTwist = session.twists && activeTwistIndex >= 0 ? session.twists[activeTwistIndex] : null;
-
-  return (
-    <section className={`timer-stage game-challenge ${urgent ? "urgent" : ""}`}>
-      <GamePromptDisplay session={session} compact />
-      {visibleTwist ? (
-        <div className="plot-twist-card" key={visibleTwist}>
-          <span>Plot Twist</span>
-          <strong>{visibleTwist}</strong>
-        </div>
-      ) : null}
-      {session.gameId === "storyRelay" && session.twists?.length ? (
-        <div className="twist-history">
-          {session.twists.slice(0, Math.max(0, activeTwistIndex + 1)).map((twist, index) => (
-            <span key={twist}>{index + 1}. {twist}</span>
-          ))}
-        </div>
-      ) : null}
-      <div className="timer-card">
-        <div className="timer-ring" style={{ "--progress": `${Math.min(1, Math.max(0, progress)) * 360}deg` } as React.CSSProperties}>
-          <div>
-            <span>{config.challengeLabel}</span>
-            <strong>{formatTime(remaining)}</strong>
-          </div>
-        </div>
-        <button className="secondary big-action" type="button" onClick={finishNow}>
-          I&apos;m done
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -2511,6 +2569,7 @@ export default function SpeechBrigade() {
   const [selectedGameId, setSelectedGameId] = useState<SpeakingGameId | null>(null);
   const [gameSession, setGameSession] = useState<SpeakingGameSession | null>(null);
   const [gameRevealSpinning, setGameRevealSpinning] = useState(false);
+  const [gameRoundStarted, setGameRoundStarted] = useState(false);
   const [infoModal, setInfoModal] = useState<InfoModalContent | null>(null);
   const [activeVaultAnalysis, setActiveVaultAnalysis] = useState<{
     analysis: AnalysisResult | null;
@@ -2647,8 +2706,7 @@ export default function SpeechBrigade() {
     "results",
     "vaultAnalysis",
     "preparedResults",
-    "gamePrepCountdown",
-    "gameChallenge",
+    "gameRounds",
     "gameResults",
   ].includes(screen);
 
@@ -2676,6 +2734,7 @@ export default function SpeechBrigade() {
     setSelectedGameId(null);
     setGameSession(null);
     setGameRevealSpinning(false);
+    setGameRoundStarted(false);
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
     setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
@@ -2721,7 +2780,10 @@ export default function SpeechBrigade() {
     setSelectedGameId(gameId);
     setGameSession({ gameId });
     setGameRevealSpinning(false);
-    setScreen("gameInstructions");
+    setGameRoundStarted(false);
+    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
+    setActiveSlot(null);
+    setScreen("gameSetup");
   };
 
   useEffect(() => {
@@ -2755,9 +2817,13 @@ export default function SpeechBrigade() {
         setRound(initialRound);
         setPreparedStage("setup");
       }
-      if (target === "gameInstructions") {
+      // Game setup pages start a fresh game, like the event intros above.
+      if (target === "gameSetup") {
         setGameSession((current) => (current ? { gameId: current.gameId } : current));
         setGameRevealSpinning(false);
+        setGameRoundStarted(false);
+        setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
+        setActiveSlot(null);
       }
       screenRef.current = target;
       setScreenState(target);
@@ -2780,22 +2846,19 @@ export default function SpeechBrigade() {
     setGameSession({ gameId: "hotSeat", question });
     setGameRevealSpinning(false);
     audio.ding();
-    window.setTimeout(() => setScreen("gamePrepCountdown"), 700);
   };
 
   const prepareWordFusionWords = (words: string[]) => {
     setGameSession({ gameId: "wordFusion", words });
     setGameRevealSpinning(false);
-    window.setTimeout(() => setScreen("gamePrepCountdown"), 900);
   };
 
   const prepareStoryRelay = () => {
     const previous = gameSession?.openingLine;
     const openingLine = chooseDifferent(storyOpenings, previous);
     const twists = uniqueDraw(storyTwists, 3);
-    setGameSession({ gameId: "storyRelay", openingLine, twists, activeTwistIndex: -1 });
+    setGameSession({ gameId: "storyRelay", openingLine, twists });
     audio.ding();
-    window.setTimeout(() => setScreen("gamePrepCountdown"), 700);
   };
 
   const prepareLandPlane = () => {
@@ -2805,36 +2868,33 @@ export default function SpeechBrigade() {
     audio.ding();
   };
 
-  const completeSpeakingGame = (elapsed: number, completion: CompletionStatus) => {
-    if (!gameSession) return;
-    setGameSession({
-      ...gameSession,
-      elapsedSeconds: Math.round(elapsed),
-      completion,
-    });
+  const completeGameRound = (elapsed: number) => {
+    if (!gameSession || !gameConfig) return;
+    const roundIndex = gameSession.roundIndex || 0;
+    const roundElapsedSeconds = [...(gameSession.roundElapsedSeconds || []), Math.round(elapsed)];
+    setGameRoundStarted(false);
+    if (roundIndex < gameConfig.rounds.length - 1) {
+      setGameSession({ ...gameSession, roundIndex: roundIndex + 1, roundElapsedSeconds });
+      return;
+    }
+    setGameSession({ ...gameSession, roundElapsedSeconds });
     setScreen("gameResults");
+  };
+
+  const startGameTimer = () => {
+    setGameRoundStarted(false);
+    setScreen("gameRounds");
   };
 
   const retrySpeakingGame = () => {
     if (!gameSession) return;
-    const retryGameId = gameSession.gameId;
-    setSelectedGameId(retryGameId);
+    setSelectedGameId(gameSession.gameId);
+    setGameSession({ gameId: gameSession.gameId });
     setGameRevealSpinning(false);
-    if (retryGameId === "hotSeat") {
-      setGameSession({ gameId: retryGameId });
-      setScreen("hotSeatReveal");
-    } else if (retryGameId === "wordFusion") {
-      setGameSession({ gameId: retryGameId });
-      setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-      setActiveSlot(null);
-      setScreen("wordFusionSpin");
-    } else if (retryGameId === "storyRelay") {
-      setGameSession({ gameId: retryGameId });
-      setScreen("storyRelaySetup");
-    } else {
-      setGameSession({ gameId: retryGameId });
-      setScreen("landPlaneSetup");
-    }
+    setGameRoundStarted(false);
+    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
+    setActiveSlot(null);
+    setScreen("gameSetup");
   };
 
   const sendMagicLink = async (event: React.FormEvent) => {
@@ -3218,15 +3278,15 @@ export default function SpeechBrigade() {
     spinSequentialSlots(questions.map((question) => ({ value: question.question, label: question.category })));
   };
 
-  const spinWordFusion = () => {
+  // Reveals game slots one at a time; labels stay visible while each slot spins.
+  const spinGameSlots = (items: SlotItem[], onDone: () => void) => {
     if (activeSlot !== null || gameRevealSpinning) return;
     audio.unlock();
     setGameRevealSpinning(true);
-    const words = uniqueDraw(wordFusionBank, 3);
-    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
+    setSlotItems(items.map((item) => ({ value: "—", label: item.label })));
     const tickIntervals: number[] = [];
 
-    words.forEach((word, index) => {
+    items.forEach((item, index) => {
       window.setTimeout(() => {
         setActiveSlot(index);
         audio.slotTick();
@@ -3234,14 +3294,38 @@ export default function SpeechBrigade() {
       }, index * 1450);
       window.setTimeout(() => {
         if (tickIntervals[index]) window.clearInterval(tickIntervals[index]);
-        setSlotItems((current) => current.map((slot, slotIndex) => (slotIndex === index ? { value: word } : slot)));
+        setSlotItems((current) => current.map((slot, slotIndex) => (slotIndex === index ? item : slot)));
         setActiveSlot(null);
         audio.ding();
-        if (index === words.length - 1) {
-          prepareWordFusionWords(words);
-        }
+        if (index === items.length - 1) onDone();
       }, index * 1450 + 1180);
     });
+  };
+
+  const spinWordFusion = () => {
+    const words = uniqueDraw(wordFusionBank, 3);
+    spinGameSlots(words.map((word) => ({ value: word })), () => prepareWordFusionWords(words));
+  };
+
+  const startThreeTwoOneSpin = () => {
+    setGameRevealSpinning(true);
+    setGameSession({ gameId: "threeTwoOne", roundIndex: 0 });
+  };
+
+  const landThreeTwoOne = (argument: string) => {
+    setGameSession({ gameId: "threeTwoOne", argument, roundIndex: 0 });
+    setGameRevealSpinning(false);
+  };
+
+  const spinWeighing = () => {
+    const scenarios = uniqueDraw(weighingScenarios, 2);
+    spinGameSlots(
+      scenarios.map((scenario, index) => ({ value: scenario, label: `Speaker ${index + 1}: this is worse` })),
+      () => {
+        setGameSession({ gameId: "weighing", scenarios, roundIndex: 0 });
+        setGameRevealSpinning(false);
+      },
+    );
   };
 
   const chooseTopic = (topic: string) => {
@@ -3444,13 +3528,7 @@ export default function SpeechBrigade() {
             <p className="eyebrow">National Speech & Debate Association practice studio</p>
             <h1>Speech Brigade</h1>
             <div className="hero-actions">
-              <button
-                className="ghost-card"
-                type="button"
-                disabled
-                aria-disabled="true"
-              >
-                <i className="coming-soon-badge">Coming Soon</i>
+              <button className="ghost-card" type="button" onClick={() => setScreen("gamesSelection")}>
                 <span>Speaking Games</span>
               </button>
               <button
@@ -3467,28 +3545,29 @@ export default function SpeechBrigade() {
         return (
           <section className="narrow">
             <p className="eyebrow">Speaking Games</p>
-            <h1>Speaking Games</h1>
-            <p className="lede">Small challenges. Stronger speakers.</p>
-            <div className="game-grid">
-              {SPEAKING_GAME_IDS.map((gameId) => {
-                const game = SPEAKING_GAME_CONFIGS[gameId];
-                return (
-                  <button className="game-card" type="button" key={gameId} onClick={() => startSpeakingGame(gameId)}>
-                    <i aria-hidden="true">{game.icon}</i>
-                    <span>{game.name}</span>
-                    <strong>{game.tagline}</strong>
-                    <small>{game.description}</small>
-                    <em>{game.durationLabel}</em>
-                  </button>
-                );
-              })}
+            <h1>Choose Your Game</h1>
+            <div className="event-board">
+              <h2 className="event-group-title wide">Team</h2>
+              {SPEAKING_GAME_IDS.filter((gameId) => SPEAKING_GAME_CONFIGS[gameId].team).map((gameId, index) => (
+                <button
+                  className={`event-card compact ${index === 0 ? "centered-row-start" : ""}`}
+                  type="button"
+                  key={gameId}
+                  onClick={() => startSpeakingGame(gameId)}
+                >
+                  <EventCardTitle name={SPEAKING_GAME_CONFIGS[gameId].name} />
+                </button>
+              ))}
+              <h2 className="event-group-title wide">Individual</h2>
+              {SPEAKING_GAME_IDS.filter((gameId) => !SPEAKING_GAME_CONFIGS[gameId].team).map((gameId) => (
+                <button className="event-card compact" type="button" key={gameId} onClick={() => startSpeakingGame(gameId)}>
+                  <EventCardTitle name={SPEAKING_GAME_CONFIGS[gameId].name} />
+                </button>
+              ))}
             </div>
-            <button className="secondary" type="button" onClick={goBack}>
-              Back
-            </button>
           </section>
         );
-      case "gameInstructions":
+      case "gameSetup": {
         if (!gameConfig) {
           return (
             <section className="reading">
@@ -3497,125 +3576,143 @@ export default function SpeechBrigade() {
             </section>
           );
         }
+        const startButton = (
+          <button className="primary" type="button" onClick={startGameTimer}>Start speaking</button>
+        );
+        const setupStep = (() => {
+          switch (gameConfig.id) {
+            case "hotSeat":
+              return (
+                <>
+                  <p className="eyebrow step-heading"><strong>Reveal</strong> your question</p>
+                  <div className={`question-reveal-card ${gameRevealSpinning ? "revealing" : ""} ${gameSession?.question ? "answered" : ""}`}>
+                    {gameSession?.question || "?"}
+                  </div>
+                  {gameSession?.question && !gameRevealSpinning ? startButton : (
+                    <button
+                      className="primary"
+                      type="button"
+                      disabled={gameRevealSpinning}
+                      onClick={() => {
+                        setGameRevealSpinning(true);
+                        audio.slotTick();
+                        window.setTimeout(prepareHotSeatQuestion, 760);
+                      }}
+                    >
+                      Reveal
+                    </button>
+                  )}
+                </>
+              );
+            case "wordFusion":
+              return (
+                <>
+                  <p className="eyebrow step-heading"><strong>Spin</strong> for three words</p>
+                  <SlotWindows items={slotItems} activeIndex={activeSlot} />
+                  {gameSession?.words?.length && !gameRevealSpinning ? startButton : (
+                    <button className="primary" type="button" onClick={spinWordFusion} disabled={activeSlot !== null || gameRevealSpinning}>Spin</button>
+                  )}
+                </>
+              );
+            case "storyRelay":
+              return (
+                <>
+                  <p className="eyebrow step-heading"><strong>Reveal</strong> your opening line</p>
+                  <div className="game-prompt-card">
+                    <span>Opening Line</span>
+                    <strong>{gameSession?.openingLine || "?"}</strong>
+                  </div>
+                  {gameSession?.openingLine ? startButton : (
+                    <button className="primary" type="button" onClick={prepareStoryRelay}>Reveal</button>
+                  )}
+                </>
+              );
+            case "landPlane":
+              return (
+                <>
+                  <p className="eyebrow step-heading"><strong>Reveal</strong> your speech outline</p>
+                  {gameSession?.outline ? (
+                    <>
+                      <SpeechOutlineCard outline={gameSession.outline} />
+                      {startButton}
+                    </>
+                  ) : (
+                    <>
+                      <div className="game-prompt-card">
+                        <span>Speech Outline</span>
+                        <strong>?</strong>
+                      </div>
+                      <button className="primary" type="button" onClick={prepareLandPlane}>Reveal</button>
+                    </>
+                  )}
+                </>
+              );
+            case "threeTwoOne":
+              return (
+                <>
+                  <p className="eyebrow step-heading"><strong>Spin</strong> for your argument</p>
+                  <TopicSpinner
+                    items={threeTwoOneArguments}
+                    onSpinStart={startThreeTwoOneSpin}
+                    onLand={landThreeTwoOne}
+                    useLabel="Start speaking"
+                    onUse={startGameTimer}
+                    canUse={Boolean(gameSession?.argument) && !gameRevealSpinning}
+                  />
+                </>
+              );
+            case "weighing":
+              return (
+                <>
+                  <p className="eyebrow step-heading"><strong>Spin</strong> for two scenarios</p>
+                  <SlotWindows items={slotItems.slice(0, 2)} activeIndex={activeSlot} />
+                  {gameSession?.scenarios?.length && !gameRevealSpinning ? startButton : (
+                    <button className="primary" type="button" onClick={spinWeighing} disabled={activeSlot !== null || gameRevealSpinning}>Spin</button>
+                  )}
+                </>
+              );
+          }
+        })();
         return (
-          <section className="reading">
-            <p className="eyebrow">Speaking Games</p>
-            <h1>{gameConfig.welcomeTitle}</h1>
-            <InstructionBlock>
-              {gameConfig.instructionParagraphs.map((paragraph, index) => (
-                <p key={`${gameConfig.id}-${index}`}>{paragraph}</p>
-              ))}
-            </InstructionBlock>
-            <div className="button-row">
-              <button className="primary" type="button" onClick={() => setScreen(gameConfig.setupScreen)}>Next</button>
-              <button className="secondary" type="button" onClick={goBack}>Back</button>
-            </div>
+          <section className="reading event-setup">
+            <h1>{gameConfig.name}</h1>
+            <details className="how-it-works">
+              <summary>How it works</summary>
+              <InstructionBlock>
+                {gameConfig.howItWorks.map((line, index) => (
+                  <p key={`${gameConfig.id}-${index}`}>{line}</p>
+                ))}
+              </InstructionBlock>
+            </details>
+            <div className="setup-step spin-screen">{setupStep}</div>
           </section>
         );
-      case "hotSeatReveal":
+      }
+      case "gameRounds":
+        if (!gameConfig || !gameSession) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No game selected</p>
+              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
+            </section>
+          );
+        }
         return (
-          <section className="game-setup">
-            <p className="eyebrow">The Hot Seat</p>
-            <h1>Your question awaits.</h1>
-            <p className="lede">One question. Ninety seconds. Make it count.</p>
-            <div className={`question-reveal-card ${gameRevealSpinning ? "revealing" : ""} ${gameSession?.question ? "answered" : ""}`}>
-              {gameSession?.question || "?"}
-            </div>
-            <button
-              className="primary"
-              type="button"
-              disabled={gameRevealSpinning}
-              onClick={() => {
-                setGameRevealSpinning(true);
-                audio.slotTick();
-                window.setTimeout(prepareHotSeatQuestion, 760);
+          <section className="delivery-layout round-timer-page">
+            <h1>{gameConfig.name}</h1>
+            <GameTimer
+              config={gameConfig}
+              session={gameSession}
+              started={gameRoundStarted}
+              onStart={() => {
+                audio.unlock();
+                setGameRoundStarted(true);
               }}
-            >
-              Reveal Question
-            </button>
+              onRoundComplete={completeGameRound}
+              onWarningSecond={warningTone}
+              onTwist={audio.ding}
+            />
           </section>
-        );
-      case "wordFusionSpin":
-        return (
-          <section className="spin-screen">
-            <p className="eyebrow">Word Fusion</p>
-            <h1>Spin your words.</h1>
-            <p className="lede">Three unexpected ingredients. One creative response.</p>
-            <SlotWindows items={slotItems} activeIndex={activeSlot} />
-            <button className="primary" type="button" onClick={spinWordFusion} disabled={activeSlot !== null || gameRevealSpinning || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
-          </section>
-        );
-      case "storyRelaySetup":
-        return (
-          <section className="game-setup">
-            <p className="eyebrow">Story Relay</p>
-            <h1>Every story starts somewhere.</h1>
-            <div className="game-prompt-card">
-              <span>Opening Line</span>
-              <strong>{gameSession?.openingLine || "Your opening line is waiting."}</strong>
-            </div>
-            <button className="primary" type="button" onClick={prepareStoryRelay}>
-              Begin Story
-            </button>
-          </section>
-        );
-      case "landPlaneSetup":
-        return (
-          <section className="game-setup land-plane-setup">
-            <p className="eyebrow">Land the Plane</p>
-            <h1>Prepare for landing.</h1>
-            <p className="lede">Read the argument. Deliver the ending.</p>
-            {gameSession?.outline ? (
-              <>
-                <SpeechOutlineCard outline={gameSession.outline} />
-                <p className="ready-line">Ready to deliver your conclusion?</p>
-                <button className="primary" type="button" onClick={() => setScreen("gamePrepCountdown")}>Start Challenge</button>
-              </>
-            ) : (
-              <>
-                <div className="game-prompt-card">
-                  <span>Speech Outline</span>
-                  <strong>Your speech outline is waiting.</strong>
-                </div>
-                <button className="primary" type="button" onClick={prepareLandPlane}>Reveal Speech</button>
-              </>
-            )}
-          </section>
-        );
-      case "gamePrepCountdown":
-        if (!gameConfig || !gameSession) {
-          return (
-            <section className="results">
-              <p className="eyebrow">No game selected</p>
-              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
-            </section>
-          );
-        }
-        return (
-          <GamePrepCountdown
-            config={gameConfig}
-            session={gameSession}
-            onDone={() => setScreen("gameChallenge")}
-            onWarningSecond={warningTone}
-          />
-        );
-      case "gameChallenge":
-        if (!gameConfig || !gameSession) {
-          return (
-            <section className="results">
-              <p className="eyebrow">No game selected</p>
-              <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
-            </section>
-          );
-        }
-        return (
-          <SpeakingGameChallenge
-            config={gameConfig}
-            session={gameSession}
-            onComplete={completeSpeakingGame}
-            onWarningSecond={warningTone}
-            onTwist={audio.ding}
-          />
         );
       case "gameResults":
         if (!gameConfig || !gameSession) {
@@ -3627,28 +3724,32 @@ export default function SpeechBrigade() {
           );
         }
         return (
-          <section className="results game-results">
-            <p className="eyebrow">Speaking Games</p>
-            <h1>{gameConfig.resultTitle}</h1>
+          <section className="results">
+            <h1>Round complete.</h1>
             <div className="summary-card">
               <SummaryRow label="Game" value={gameConfig.name} />
               {gameSession.question ? <SummaryRow label="Question" value={gameSession.question} /> : null}
               {gameSession.words?.length ? <SummaryRow label="Words" value={gameSession.words.join(", ")} /> : null}
-              {gameSession.openingLine ? <SummaryRow label="Opening" value={gameSession.openingLine} /> : null}
-              {gameSession.twists?.length ? <SummaryRow label="Plot twists" value={gameSession.twists.join(" · ")} /> : null}
+              {gameSession.openingLine ? <SummaryRow label="Opening line" value={gameSession.openingLine} /> : null}
               {gameSession.outline ? <SummaryRow label="Topic" value={gameSession.outline.topic} /> : null}
-              {gameSession.outline ? <SummaryRow label="Central message" value={gameSession.outline.centralMessage} /> : null}
-              <SummaryRow label="Time available" value={formatTime(gameConfig.durationSeconds)} />
-              <SummaryRow label="Time used" value={formatTime(gameSession.elapsedSeconds || 0)} />
-              <SummaryRow label="Completion" value={gameSession.completion === "expired" ? "Timer expired" : "I'm done"} />
+              {gameSession.argument ? <SummaryRow label="Argument" value={gameSession.argument} /> : null}
+              {gameSession.scenarios?.map((scenario, index) => (
+                <SummaryRow key={scenario} label={`Speaker ${index + 1} defended`} value={scenario} />
+              ))}
+              {gameConfig.rounds.map((round, index) => (
+                <SummaryRow
+                  key={round.label}
+                  label={gameConfig.rounds.length > 1 ? round.label : "Time used"}
+                  value={`${formatTime(gameSession.roundElapsedSeconds?.[index] || 0)} of ${formatTime(round.seconds)}`}
+                />
+              ))}
             </div>
             <div className="analysis-error-card future-analysis-card">
               <span className="eyebrow">Practice tip</span>
               <p>{gameConfig.tip}</p>
-              <p>No personalized feedback has been generated for this game round.</p>
             </div>
             <div className="button-row">
-              <button className="primary" type="button" onClick={retrySpeakingGame}>{gameConfig.retryLabel}</button>
+              <button className="primary" type="button" onClick={retrySpeakingGame}>Practice Again</button>
               <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
             </div>
           </section>
