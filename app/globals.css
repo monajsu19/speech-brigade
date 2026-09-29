@@ -3393,6 +3393,63 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.home-button.icon-button {
+  display: inline-grid;
+  place-items: center;
+  padding: 0.45rem;
+  aspect-ratio: 1;
+}
+
+.account-card {
+  width: min(560px, 100%);
+  margin: clamp(1.6rem, 3vw, 2.2rem) auto 0;
+  padding: 1.1rem 1.4rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: 0 12px 36px rgba(35, 30, 20, 0.06);
+  text-align: left;
+}
+
+.account-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.9rem;
+  font-family: var(--display);
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.account-field {
+  padding: 0.75rem 0;
+}
+
+.account-field + .account-field {
+  border-top: 1px solid var(--line);
+}
+
+.account-field span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: rgba(24, 26, 31, 0.55);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.account-field p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.98rem;
+  overflow-wrap: anywhere;
+}
+
+.account-card + .secondary {
+  margin-top: clamp(1.6rem, 3vw, 2.2rem);
+}
+
 /* Every page except landing pins its heading at the same spot near the top and stacks
    content downward, instead of centering the whole page vertically. */
 .screen-frame:not(.landing-frame) {
@@ -3410,6 +3467,85 @@ h1 {
 .screen-frame:not(.landing-frame) > .delivery-layout {
   align-content: start;
   min-height: 0;
+}
+
+.sign-out-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: clamp(1.4rem, 3vw, 2rem) auto 0;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.sign-out-button:hover {
+  background: rgba(24, 26, 31, 0.05);
+  color: var(--ink);
+}
+
+.sign-out-button:focus-visible {
+  outline: 3px solid rgba(201, 164, 91, 0.7);
+  outline-offset: 2px;
+}
+
+.auth-screen > .sign-out-button {
+  display: flex;
+  width: fit-content;
+}
+
+.sign-out-button + .secondary {
+  margin-top: 1.1rem;
+}
+
+.sign-out-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.sign-out-confirm {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  margin: clamp(1.4rem, 3vw, 2rem) auto 0;
+  padding: 0.8rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+
+.sign-out-confirm p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.sign-out-confirm > div {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sign-out-confirm .sign-out-button {
+  margin: 0;
+}
+
+.sign-out-button.confirm {
+  color: var(--danger);
+}
+
+.sign-out-success {
+  color: var(--ink);
+}
+
+.sign-out-confirm + .secondary {
+  margin-top: 1.1rem;
 }
 
 /* Topic spinner card and buttons (off_the_cuff topic-spinner spec, variant A §3.2). */

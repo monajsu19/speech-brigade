@@ -1735,6 +1735,33 @@ function CopyIcon() {
   );
 }
 
+function SignOutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4" />
+      <path d="M10 12h10M16 8l4 4-4 4" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 7l9 6 9-6" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
 function CheckIcon() {
   return (
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2554,6 +2581,7 @@ export default function SpeechBrigade() {
   const [authEmail, setAuthEmail] = useState("");
   const [authStatus, setAuthStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [authError, setAuthError] = useState("");
+  const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut" | "done">("idle");
   const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(true);
   const [saveRecordingEnabled, setSaveRecordingEnabled] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("speech-brigade-save-recording") === "true",
@@ -2923,7 +2951,9 @@ export default function SpeechBrigade() {
 
   const signOut = async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
+    setSignOutStatus("signingOut");
+    const { error } = await supabase.auth.signOut();
+    setSignOutStatus(error ? "confirming" : "done");
   };
 
   const signInWithGoogle = async () => {
@@ -4032,25 +4062,63 @@ export default function SpeechBrigade() {
       case "settings":
         return (
           <section className="narrow auth-screen">
-            <p className="eyebrow">Settings</p>
-            <h1>Your account</h1>
+            <h1>Settings</h1>
             {!isSupabaseConfigured ? (
               <p className="lede">Supabase is not configured for this local preview, so account features are disabled.</p>
             ) : session ? (
-              <p className="lede">
-                You&apos;re signed in as <strong>{session.user.email}</strong>.
-              </p>
+              <div className="account-card">
+                <h2>
+                  <MailIcon />
+                  Account
+                </h2>
+                <div className="account-field">
+                  <span>Email</span>
+                  <p>{session.user.email}</p>
+                </div>
+                <div className="account-field">
+                  <span>Signed in with</span>
+                  <p>{session.user.app_metadata?.provider === "google" ? "Google" : "Email"}</p>
+                </div>
+              </div>
+            ) : signOutStatus === "done" ? (
+              <p className="lede sign-out-success">You&apos;ve successfully signed out.</p>
             ) : (
               <p className="lede">You&apos;re not signed in.</p>
             )}
-            {isSupabaseConfigured && session ? (
-              <button className="secondary" type="button" onClick={signOut}>
-                Sign Out
-              </button>
-            ) : null}
             <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
+            {isSupabaseConfigured && session ? (
+              signOutStatus === "confirming" || signOutStatus === "signingOut" ? (
+                <div className="sign-out-confirm" role="group" aria-label="Confirm sign out">
+                  <p>Sign out of your account?</p>
+                  <div>
+                    <button
+                      className="sign-out-button"
+                      type="button"
+                      disabled={signOutStatus === "signingOut"}
+                      onClick={() => setSignOutStatus("idle")}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="sign-out-button confirm"
+                      type="button"
+                      disabled={signOutStatus === "signingOut"}
+                      onClick={() => void signOut()}
+                    >
+                      <SignOutIcon />
+                      {signOutStatus === "signingOut" ? "Signing out…" : "Sign out"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button className="sign-out-button" type="button" onClick={() => setSignOutStatus("confirming")}>
+                  <SignOutIcon />
+                  Sign out
+                </button>
+              )
+            ) : null}
           </section>
         );
       case "pastSpeeches":
@@ -4421,8 +4489,17 @@ export default function SpeechBrigade() {
 	            Listen to Past Speeches
 	          </button>
 	          {session ? (
-	            <button className="home-button" type="button" onClick={() => setScreen("settings")}>
-	              Settings
+	            <button
+	              className="home-button icon-button"
+	              type="button"
+	              aria-label="Settings"
+	              title="Settings"
+	              onClick={() => {
+	                setSignOutStatus("idle");
+	                setScreen("settings");
+	              }}
+	            >
+	              <SettingsIcon />
 	            </button>
 	          ) : (
 	            <button
