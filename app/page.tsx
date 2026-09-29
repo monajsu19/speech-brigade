@@ -167,6 +167,7 @@ interface PreparedEventConfig {
 interface PreparedPerformanceResult {
   eventId: PreparedEventId;
   elapsedSeconds: number;
+  timeLimitSeconds: number;
   completion: CompletionStatus;
   analysis: AnalysisResult | null;
   analysisTranscript: string;
@@ -1222,6 +1223,8 @@ function useDialGeometry() {
 // Dragging follows the pointer's angle around the center (DURATION_DIAL_SPEC.md, sections 1 and 5):
 // 12 o'clock is zero, values grow clockwise in 5 s steps, clamped to 15 s..scaleMax, no wrap-around.
 const DIAL_MIN_SECONDS = 15;
+const PREPARED_DURATION_PRESETS = [600, 420, 300];
+const EXTEMP_DURATION_PRESETS = [420, 300];
 const DIAL_STEP_SECONDS = 5;
 
 function CountdownDial({
@@ -1317,6 +1320,8 @@ function TimerPanel({
   timerKey,
   active = true,
   onStart,
+  presets,
+  onSecondsChange,
 }: {
   seconds: number;
   buttonLabel?: string;
@@ -1328,6 +1333,9 @@ function TimerPanel({
   // When inactive, the full time shows and the button starts the timer instead.
   active?: boolean;
   onStart?: () => void;
+  // Before Start: preset tabs under the dial, and dragging the dial sets any other length.
+  presets?: number[];
+  onSecondsChange?: (seconds: number) => void;
 }) {
   const { remaining, finishNow } = useCountdownTimer({
     seconds,
@@ -1346,7 +1354,27 @@ function TimerPanel({
         </div>
       ) : null}
       <div className="timer-card">
-        <CountdownDial remaining={remaining} total={seconds} />
+        <CountdownDial
+          remaining={active ? remaining : seconds}
+          total={seconds}
+          scaleMax={presets?.length ? Math.max(seconds, ...presets) : seconds}
+          onDrag={!active ? onSecondsChange : undefined}
+        />
+        {!active && presets?.length && onSecondsChange ? (
+          <div className="duration-presets" role="group" aria-label="Speech length">
+            {presets.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className={preset === seconds ? "active" : ""}
+                aria-pressed={preset === seconds}
+                onClick={() => onSecondsChange(preset)}
+              >
+                {preset / 60} min
+              </button>
+            ))}
+          </div>
+        ) : null}
         {!active && onStart ? (
           <button className="primary big-action" type="button" onClick={onStart}>
             Start
@@ -2680,6 +2708,7 @@ export default function SpeechBrigade() {
   const latestSetupStepRef = useRef<HTMLDivElement | null>(null);
   // Prepared/interp events: the countdown and performance timer appear under the script step.
   const [preparedStage, setPreparedStage] = useState<"setup" | "performance">("setup");
+  const [preparedDurationSeconds, setPreparedDurationSeconds] = useState(600);
 
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
@@ -2942,6 +2971,7 @@ export default function SpeechBrigade() {
   const startPreparedEvent = (eventId: PreparedEventId) => {
     audio.unlock();
     setSelectedPreparedEventId(eventId);
+    setPreparedDurationSeconds(PREPARED_EVENT_CONFIGS[eventId].performanceDurationSeconds);
     setPreparedResult(null);
     setPreparedScript(null);
     setScriptUploadStatus("");
@@ -3555,6 +3585,7 @@ export default function SpeechBrigade() {
     const baseResult: PreparedPerformanceResult = {
       eventId: selectedPreparedEventId,
       elapsedSeconds: roundedElapsed,
+      timeLimitSeconds: preparedDurationSeconds,
       completion,
       analysis: null,
       analysisTranscript: "",
@@ -3947,7 +3978,9 @@ export default function SpeechBrigade() {
                 )
               ) : null}
               <TimerPanel
-                seconds={selectedPreparedEvent.performanceDurationSeconds}
+                seconds={preparedDurationSeconds}
+                presets={PREPARED_DURATION_PRESETS}
+                onSecondsChange={setPreparedDurationSeconds}
                 buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
                 timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
                 active={preparedStage === "performance"}
@@ -4027,7 +4060,7 @@ export default function SpeechBrigade() {
             <p className="lede">Great work. You&apos;ve completed a practice performance.</p>
             <div className="summary-card">
               <SummaryRow label="Event" value={`${resultEvent.name} (${resultEvent.acronym})`} />
-              <SummaryRow label="Time limit" value={formatTime(resultEvent.performanceDurationSeconds)} />
+              <SummaryRow label="Time limit" value={formatTime(preparedResult.timeLimitSeconds)} />
               <SummaryRow label="Performance time" value={formatTime(preparedResult.elapsedSeconds)} />
               <SummaryRow label="Completion" value={preparedResult.completion === "expired" ? "Timer expired" : "I'm done"} />
               {preparedScript?.status === "ready" ? <SummaryRow label="Script context" value={preparedScript.fileName} /> : null}
@@ -4388,6 +4421,12 @@ export default function SpeechBrigade() {
             ) : null}
             <TimerPanel
               seconds={round.deliverySecondsAllocated}
+              presets={round.mode === "extemp" ? EXTEMP_DURATION_PRESETS : undefined}
+              onSecondsChange={
+                round.mode === "extemp"
+                  ? (seconds) => setRound((current) => ({ ...current, deliverySecondsAllocated: seconds }))
+                  : undefined
+              }
               buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
               topic={selectedPrompt}
               timerKey={`${round.mode}-delivery-${selectedPrompt}`}
@@ -4499,7 +4538,7 @@ export default function SpeechBrigade() {
                 <>
                   <SummaryRow label="Question" value={round.selectedQuestion?.question || ""} />
                   <SummaryRow label="Preparation available" value="30:00" />
-                  <SummaryRow label="Delivery available" value="7:00" />
+                  <SummaryRow label="Delivery available" value={formatTime(round.deliverySecondsAllocated)} />
                 </>
               )}
               <SummaryRow label="Preparation used" value={formatTime(round.prepSecondsUsed)} />
