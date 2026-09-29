@@ -4333,8 +4333,7 @@ export default function SpeechBrigade() {
         return (
           <section className="countdown-screen analyzing-screen">
             <div className="analyzing-spinner" />
-	            <p>{speechAnalysisEnabled ? "Scoring your speech" : "Saving your recording"}</p>
-	            <h1>
+	            <p className="analyzing-status" role="status">
 	              {!speechAnalysisEnabled
 	                ? "Saving your recording…"
 	                : analyzingStage === "uploading"
@@ -4346,7 +4345,7 @@ export default function SpeechBrigade() {
 	                    : analyzingStage === "done"
 	                      ? "Done"
 	                      : "Analyzing…"}
-            </h1>
+            </p>
             <AnalyzingProgress stage={analyzingStage} saveOnly={!speechAnalysisEnabled} />
           </section>
         );

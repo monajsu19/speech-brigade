@@ -2290,10 +2290,10 @@ h1 {
 }
 
 .analyzing-spinner {
-  width: 4rem;
-  height: 4rem;
-  margin-bottom: 1.4rem;
-  border: 3px solid rgba(235, 216, 170, 0.22);
+  width: 2.2rem;
+  height: 2.2rem;
+  margin-bottom: 1rem;
+  border: 2.5px solid rgba(201, 164, 91, 0.2);
   border-top-color: var(--gold);
   border-radius: 50%;
   animation: spin 900ms linear infinite;
@@ -3565,6 +3565,31 @@ h1 {
   flex-shrink: 0;
   gap: 0.1rem;
   font-size: 0.95rem;
+}
+
+/* Loading text, not a page title: small sans status line under the spinner. */
+.countdown-screen .analyzing-status {
+  margin: 0;
+  color: rgba(24, 26, 31, 0.7);
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.analyzing-screen .analyzing-progress {
+  width: min(260px, 100%);
+  margin-top: 0.9rem;
+  gap: 0.4rem;
+}
+
+.analyzing-screen .analyzing-progress-track {
+  height: 4px;
+}
+
+.analyzing-screen .analyzing-progress-label {
+  font-size: 0.75rem;
 }
 
 /* Topic spinner card and buttons (off_the_cuff topic-spinner spec, variant A §3.2). */
