@@ -26,10 +26,10 @@ type Screen =
   | "settings"
   | "pastSpeeches"
   | "impromptuIntro"
-  | "impromptuDelivery"
+  | "planSpeech"
+  | "recordSpeech"
   | "analyzing"
   | "extempIntro"
-  | "extempDelivery"
   | "results"
   | "vaultAnalysis";
 
@@ -44,9 +44,9 @@ const TRANSIENT_SCREENS = new Set<Screen>([
   "gameRounds",
   "eventsAuth",
   "signIn",
-  "impromptuDelivery",
+  "planSpeech",
+  "recordSpeech",
   "analyzing",
-  "extempDelivery",
 ]);
 
 // Current analyses use organization/analysis/delivery for every event.
@@ -1158,7 +1158,11 @@ function useCountdownTimer({
   }, [active, seconds, timerKey]);
 
   const finishNow = () => {
-    if (completedRef.current) return;
+    // Screens that stay put when time runs out still need their button to move on.
+    if (completedRef.current) {
+      if (remaining <= 0) onCompleteRef.current(seconds, "manual");
+      return;
+    }
     completedRef.current = true;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     const elapsed = Math.min(seconds, Math.max(0, (performance.now() - startRef.current) / 1000));
@@ -2696,7 +2700,9 @@ export default function SpeechBrigade() {
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [lockedChoice, setLockedChoice] = useState("");
   // Impromptu/Extemp setup steps stack on one page; each appears after pressing Next.
-  const [setupStage, setSetupStage] = useState<"spin" | "topics" | "prep">("spin");
+  const [setupStage, setSetupStage] = useState<"spin" | "topics">("spin");
+  // Plan/record timers wait for the user to press Start.
+  const [roundTimerStarted, setRoundTimerStarted] = useState(false);
   const latestSetupStepRef = useRef<HTMLDivElement | null>(null);
   // Prepared/interp events: the countdown and performance timer appear under the script step.
   const [preparedStage, setPreparedStage] = useState<"setup" | "performance">("setup");
@@ -2901,9 +2907,8 @@ export default function SpeechBrigade() {
             ? selectedGame.name
           : "";
   const isDarkPhase = [
-    "impromptuDelivery",
+    "recordSpeech",
     "analyzing",
-    "extempDelivery",
     "results",
     "vaultAnalysis",
     "preparedResults",
@@ -3177,8 +3182,7 @@ export default function SpeechBrigade() {
   useEffect(() => {
     if (
       (speechAnalysisEnabled || saveRecordingEnabled) &&
-      (screen === "impromptuDelivery" ||
-        screen === "extempDelivery" ||
+      ((screen === "recordSpeech" && roundTimerStarted) ||
         (screen === "preparedEventIntro" && preparedStage === "performance"))
     ) {
       const id = window.setTimeout(() => {
@@ -3188,7 +3192,7 @@ export default function SpeechBrigade() {
     }
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, preparedStage, speechAnalysisEnabled, saveRecordingEnabled]);
+  }, [screen, roundTimerStarted, preparedStage, speechAnalysisEnabled, saveRecordingEnabled]);
 
 	  const getRecordingSession = async () => {
 	    if (!supabase || !supabaseUrl) {
@@ -3535,8 +3539,6 @@ export default function SpeechBrigade() {
     setLockedChoice(topic);
     window.setTimeout(() => {
       setRound((current) => ({ ...current, selectedTopic: topic, roundStartTime: Date.now() }));
-      if (round.prepSecondsAllocated === 0) setScreen("impromptuDelivery");
-      else setSetupStage("prep");
     }, 280);
   };
 
@@ -3544,7 +3546,6 @@ export default function SpeechBrigade() {
     setLockedChoice(question.question);
     window.setTimeout(() => {
       setRound((current) => ({ ...current, selectedQuestion: question, roundStartTime: Date.now() }));
-      setSetupStage("prep");
     }, 280);
   };
 
@@ -3584,14 +3585,24 @@ export default function SpeechBrigade() {
     }
   };
 
-  const handlePrepComplete = (elapsed: number) => {
-    setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
-    setScreen(round.mode === "extemp" ? "extempDelivery" : "impromptuDelivery");
+  const startPlanning = () => {
+    setRoundTimerStarted(false);
+    setScreen(round.mode === "impromptu" && round.prepSecondsAllocated === 0 ? "recordSpeech" : "planSpeech");
   };
 
-	  const handleDeliveryComplete = (elapsed: number) => {
+  // Running out of prep time stays on the page; "I'm ready to speak" moves on.
+  const handlePrepComplete = (elapsed: number, completion: CompletionStatus) => {
+    setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
+    if (completion === "expired") return;
+    setRoundTimerStarted(false);
+    setScreen("recordSpeech");
+  };
+
+	  // Running out of delivery time stays on the page; "Analyze this speech" moves on.
+	  const handleDeliveryComplete = (elapsed: number, completion: CompletionStatus) => {
 	    const roundedElapsed = Math.round(elapsed);
 	    setRound((current) => ({ ...current, deliverySecondsUsed: roundedElapsed }));
+	    if (completion === "expired") return;
 	    const mode = round.mode;
     if (!mode) {
       setScreen("results");
@@ -4345,8 +4356,8 @@ export default function SpeechBrigade() {
               <InstructionBlock>
                 <p>Split <strong>7 minutes</strong> between prep and delivery.</p>
                 <p>Spin for a <strong>theme</strong>, then get three related topics.</p>
-                <p>You have <strong>30 seconds to choose</strong> a topic, or the first one is picked for you.</p>
-                <p>Prep starts right away, followed by a <strong>5-second countdown</strong> into delivery.</p>
+                <p><strong>Choose</strong> a topic, then press <strong>Start planning</strong>.</p>
+                <p>On each page, press <strong>Start</strong> to begin the timer. Press <strong>I&apos;m ready to speak</strong> when you finish prepping.</p>
               </InstructionBlock>
             </details>
             <div className="setup-step allocation">
@@ -4404,47 +4415,67 @@ export default function SpeechBrigade() {
                   selectedValue={lockedChoice}
                 />
                 {slotsDrawn ? (
-                  <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+                  <>
+                    {round.selectedTopic ? (
+                      <button className="primary" type="button" onClick={startPlanning}>
+                        {round.prepSecondsAllocated === 0 ? "Start speaking" : "Start planning"}
+                      </button>
+                    ) : null}
+                    <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+                  </>
                 ) : (
                   <button className="primary" type="button" onClick={spinTopics} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
                 )}
               </div>
             ) : null}
-            {setupStage === "prep" ? (
-              <div className="setup-step" ref={latestSetupStepRef}>
-                <TimerPanel
-                  seconds={round.prepSecondsAllocated}
-                  buttonLabel="I'm done"
-                  topic={round.selectedTopic}
-                  timerKey={`impromptu-prep-${round.selectedTopic}`}
-                  onComplete={handlePrepComplete}
-                  onWarningSecond={warningTone}
-                />
-              </div>
-            ) : null}
           </section>
         );
-      case "impromptuDelivery":
+      case "planSpeech":
         return (
-          <section className="delivery-layout">
-            {speechAnalysisEnabled || saveRecordingEnabled ? (
-	              recordingError ? (
-		                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
-	              ) : (
-	                <RecordingNotice />
-	              )
-	            ) : null}
-	            <TimerPanel
+          <section className="delivery-layout round-timer-page">
+            <h1>Plan your speech</h1>
+            <TimerPanel
+              seconds={round.mode === "extemp" ? 1800 : round.prepSecondsAllocated}
+              buttonLabel="I'm ready to speak"
+              topic={selectedPrompt}
+              timerKey={`${round.mode}-prep-${selectedPrompt}`}
+              active={roundTimerStarted}
+              onStart={() => {
+                audio.unlock();
+                setRoundTimerStarted(true);
+              }}
+              onComplete={handlePrepComplete}
+              onWarningSecond={warningTone}
+            />
+          </section>
+        );
+      case "recordSpeech":
+        return (
+          <section className="delivery-layout round-timer-page">
+            <h1>Record your speech</h1>
+            {roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) ? (
+              recordingError ? (
+                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+              ) : (
+                <RecordingNotice />
+              )
+            ) : null}
+            <TimerPanel
               seconds={round.deliverySecondsAllocated}
-              buttonLabel="I'm done"
-              topic={round.selectedTopic}
-              timerKey={`impromptu-delivery-${round.selectedTopic}`}
+              buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
+              topic={selectedPrompt}
+              timerKey={`${round.mode}-delivery-${selectedPrompt}`}
+              active={roundTimerStarted}
+              onStart={() => {
+                audio.unlock();
+                setRoundTimerStarted(true);
+              }}
               onComplete={handleDeliveryComplete}
-	              onWarningSecond={warningTone}
-	            />
-	            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
-	          </section>
-	        );
+              onWarningSecond={warningTone}
+            />
+            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
+          </section>
+        );
       case "analyzing":
         return (
           <section className="countdown-screen analyzing-screen">
@@ -4474,8 +4505,8 @@ export default function SpeechBrigade() {
               <summary>How it works</summary>
               <InstructionBlock>
                 <p>Answer a current-events question with a clear, organized, evidence-based speech.</p>
-                <p>Draw <strong>three questions</strong> and pick one within <strong>30 seconds</strong>, or the first one is picked for you.</p>
-                <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong> after a 5-second countdown.</p>
+                <p>Draw <strong>three questions</strong>, choose one, then press <strong>Start planning</strong>.</p>
+                <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong>. Each timer begins when you press <strong>Start</strong>.</p>
               </InstructionBlock>
             </details>
             <div className="setup-step spin-screen">
@@ -4488,46 +4519,20 @@ export default function SpeechBrigade() {
                 selectedValue={lockedChoice}
               />
               {slotsDrawn ? (
-                <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+                <>
+                  {round.selectedQuestion ? (
+                    <button className="primary" type="button" onClick={startPlanning}>
+                      Start planning
+                    </button>
+                  ) : null}
+                  <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+                </>
               ) : (
                 <button className="primary" type="button" onClick={spinQuestions} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
               )}
             </div>
-            {setupStage === "prep" ? (
-              <div className="setup-step" ref={latestSetupStepRef}>
-                <TimerPanel
-                  seconds={1800}
-                  buttonLabel="I'm done"
-                  topic={selectedPrompt}
-                  timerKey={`extemp-prep-${selectedPrompt}`}
-                  onComplete={handlePrepComplete}
-                  onWarningSecond={warningTone}
-                />
-              </div>
-            ) : null}
           </section>
         );
-      case "extempDelivery":
-        return (
-          <section className="delivery-layout">
-            {speechAnalysisEnabled || saveRecordingEnabled ? (
-	              recordingError ? (
-		                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
-	              ) : (
-	                <RecordingNotice />
-	              )
-	            ) : null}
-	            <TimerPanel
-              seconds={420}
-              buttonLabel="I'm done"
-              topic={selectedPrompt}
-              timerKey={`extemp-delivery-${selectedPrompt}`}
-              onComplete={handleDeliveryComplete}
-	              onWarningSecond={warningTone}
-	            />
-	            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
-	          </section>
-	        );
       case "results":
         if (round.mode && round.analysis) {
           return (

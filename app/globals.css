@@ -3370,6 +3370,27 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Plan/record pages: title, topic, timer, and button all fit in one viewport height. */
+.round-timer-page {
+  align-content: start;
+  gap: clamp(0.4rem, 1.6vh, 1rem);
+  padding-bottom: 0.5rem;
+}
+
+.round-timer-page .topic-banner {
+  margin-bottom: clamp(0.3rem, 1.2vh, 0.8rem);
+  padding: clamp(0.5rem, 1.4vh, 0.9rem) 1.1rem;
+}
+
+.round-timer-page .topic-banner strong {
+  font-size: clamp(1.1rem, 3.4vh, 2.2rem);
+}
+
+.round-timer-page .timer-card {
+  gap: clamp(0.6rem, 2vh, 1.2rem);
+  padding: clamp(0.3rem, 1vh, 0.8rem);
+}
+
 .home-button.icon-button {
   display: inline-grid;
   place-items: center;
