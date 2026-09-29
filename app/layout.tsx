@@ -3,12 +3,12 @@ import "./globals.css";
 
 const siteUrl = "https://speech-studio-nsda.zeldatf2potato.chatgpt.site";
 const siteDescription =
-  "Speech Brigade is a free National Speech & Debate Association speaking practice web app for high school and college students, coaches, teachers, and schools practicing Extemporaneous Speaking and Impromptu Speaking.";
+  "Speech Brigade is a free Competitive Speech & Debate speaking practice web app for high school and college students, coaches, teachers, and schools practicing Extemporaneous Speaking and Impromptu Speaking.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Speech Brigade | National Speech & Debate Association Practice",
+    default: "Speech Brigade | Competitive Speech & Debate Practice",
     template: "%s | Speech Brigade",
   },
   description: siteDescription,
@@ -18,8 +18,8 @@ export const metadata: Metadata = {
   publisher: "JD Hopper",
   category: "Education",
   keywords: [
-    "National Speech & Debate Association",
-    "National Speech and Debate Association practice",
+    "Competitive Speech & Debate",
+    "Competitive Speech and Debate practice",
     "speech and debate practice",
     "extemporaneous speaking practice",
     "impromptu speaking practice",
@@ -51,14 +51,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     url: siteUrl,
-    title: "Speech Brigade | National Speech & Debate Association Practice",
+    title: "Speech Brigade | Competitive Speech & Debate Practice",
     description: siteDescription,
     siteName: "Speech Brigade",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Speech Brigade | National Speech & Debate Association Practice",
+    title: "Speech Brigade | Competitive Speech & Debate Practice",
     description: siteDescription,
   },
   icons: {

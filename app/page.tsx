@@ -939,14 +939,14 @@ const structuredData = {
     },
   ],
   about: [
-    "National Speech & Debate Association practice",
+    "Competitive Speech & Debate practice",
     "Extemporaneous Speaking",
     "Impromptu Speaking",
     "high school speech and debate",
     "college public speaking practice",
   ],
   description:
-    "A polished speaking practice web app for schools, high school students, college students, teachers, and coaches preparing for National Speech & Debate Association Extemporaneous Speaking and Impromptu Speaking rounds.",
+    "A polished speaking practice web app for schools, high school students, college students, teachers, and coaches preparing for Competitive Speech & Debate Extemporaneous Speaking and Impromptu Speaking rounds.",
   offers: {
     "@type": "Offer",
     price: "0",
@@ -1816,9 +1816,14 @@ function TipPopover({
             type="button"
             className="tip-popover-close"
             aria-label="Dismiss tip"
+            data-no-press-sound="true"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
               onClose?.();
-              event.currentTarget.blur();
+              const activeElement = document.activeElement as HTMLElement | null;
+              activeElement?.blur();
             }}
           >
             ×
@@ -2502,6 +2507,7 @@ export default function SpeechBrigade() {
   const [vaultLoading, setVaultLoading] = useState(false);
   const [vaultError, setVaultError] = useState("");
   const [foundersOpen, setFoundersOpen] = useState(false);
+  const [hideTipForMobileOverlap, setHideTipForMobileOverlap] = useState(false);
   const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
   const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<SpeakingGameId | null>(null);
@@ -2526,6 +2532,9 @@ export default function SpeechBrigade() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const saveRecordingPreferenceLoadedRef = useRef(false);
   const scriptInputRef = useRef<HTMLInputElement | null>(null);
+  const creatorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const lastPointerTypeRef = useRef("");
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -2608,6 +2617,37 @@ export default function SpeechBrigade() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [foundersOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const mobileQuery = window.matchMedia("(max-width: 760px)");
+    const updateTipVisibility = () => {
+      if (!mobileQuery.matches) {
+        setHideTipForMobileOverlap(false);
+        return;
+      }
+
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const blockingElements = [headerRef.current, creatorButtonRef.current].filter(Boolean) as HTMLElement[];
+      const shouldHide = blockingElements.some((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < viewportHeight;
+      });
+      setHideTipForMobileOverlap(shouldHide);
+    };
+
+    const frame = window.requestAnimationFrame(updateTipVisibility);
+    window.addEventListener("scroll", updateTipVisibility, { passive: true });
+    window.addEventListener("resize", updateTipVisibility);
+    mobileQuery.addEventListener("change", updateTipVisibility);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", updateTipVisibility);
+      window.removeEventListener("resize", updateTipVisibility);
+      mobileQuery.removeEventListener("change", updateTipVisibility);
+    };
+  }, [screen]);
 
   useEffect(() => {
     if (!infoModal) return undefined;
@@ -3378,11 +3418,19 @@ export default function SpeechBrigade() {
   const warningTone = (second: number) => audio.countdown(second === 0);
 
   const selectedPrompt = round.mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
-  const playInteractionSound = (event: React.PointerEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement | null;
+  const playInteractionSoundForTarget = (target: HTMLElement | null) => {
     if (!target?.closest("button:not(:disabled), a[href]")) return;
     if (target.closest("[data-no-press-sound='true']")) return;
     audio.press();
+  };
+  const playPointerInteractionSound = (event: React.PointerEvent<HTMLElement>) => {
+    lastPointerTypeRef.current = event.pointerType;
+    if (event.pointerType === "touch" || event.pointerType === "pen") return;
+    playInteractionSoundForTarget(event.target as HTMLElement | null);
+  };
+  const playClickInteractionSound = (event: React.MouseEvent<HTMLElement>) => {
+    if (lastPointerTypeRef.current === "mouse" && event.detail !== 0) return;
+    playInteractionSoundForTarget(event.target as HTMLElement | null);
   };
 
   const content = (() => {
@@ -3407,7 +3455,7 @@ export default function SpeechBrigade() {
                 type="button"
                 onClick={() => setScreen("events")}
               >
-                <span>National Speech & Debate Association</span>
+                <span>Competitive Speech & Debate</span>
               </button>
             </div>
           </section>
@@ -3605,7 +3653,7 @@ export default function SpeechBrigade() {
       case "events":
         return (
           <section className="narrow">
-            <p className="eyebrow">National Speech & Debate Association</p>
+            <p className="eyebrow">Competitive Speech & Debate</p>
             <h1>Choose Your Event</h1>
             <p className="lede">Select a speaking event to begin your practice.</p>
             <div className="event-grid">
@@ -3868,7 +3916,7 @@ export default function SpeechBrigade() {
             <h1>{isSupabaseConfigured ? "Sign in to your account" : "Practice mode is available"}</h1>
             <p className="lede">
               {isSupabaseConfigured
-                ? "Sign in to your account, or sign up for a new one, to start a National Speech & Debate Association practice round."
+                ? "Sign in to your account, or sign up for a new one, to start a Competitive Speech & Debate practice round."
                 : "Supabase is not configured on this computer, so saved recordings and speech analysis are disabled. Timers, prompts, and practice rounds still work."}
             </p>
             {!isSupabaseConfigured ? (
@@ -4401,13 +4449,13 @@ export default function SpeechBrigade() {
   })();
 
   return (
-	    <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`} onPointerDownCapture={playInteractionSound}>
+	    <main className={`app-shell ${isDarkPhase ? "dark-phase" : ""}`} onPointerDownCapture={playPointerInteractionSound} onClickCapture={playClickInteractionSound}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
       <div className="ambient" aria-hidden="true" />
-	      <header className="app-header">
+	      <header className="app-header" ref={headerRef}>
 	        {screen === "landing" ? (
 	          <>
 	            <div className="header-spacer" />
@@ -4455,6 +4503,7 @@ export default function SpeechBrigade() {
       </div>
       <button
         type="button"
+        ref={creatorButtonRef}
         className="creator-float"
         onClick={() => setFoundersOpen(true)}
         aria-label="Learn about Speech Brigade's founders"
@@ -4462,13 +4511,14 @@ export default function SpeechBrigade() {
         <span className="creator-copy">Learn About Speech Brigade&apos;s Founders</span>
       </button>
       <a
-        className="tip-float"
+        className={`tip-float ${hideTipForMobileOverlap ? "tip-float-hidden" : ""}`}
         href="https://buymeacoffee.com/speechbrigade"
         target="_blank"
         rel="noreferrer"
         aria-label="Leave a tip to keep Speech Brigade free"
       >
-        Leave a tip to keep our site free!
+        <span className="tip-copy-desktop">Leave a tip to keep our site free!</span>
+        <span className="tip-copy-mobile">Leave a tip</span>
       </a>
       {infoModal ? (
         <div

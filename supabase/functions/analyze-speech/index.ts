@@ -11,7 +11,7 @@
 // ('impromptu' | 'extemp', defaulting to 'impromptu' for older rows):
 //   - impromptu: organization / analysis / delivery (the original rubric).
 //   - extemp: argumentationAnalysis / sourceConsideration / delivery — the
-//     NSDA Extemp judging criteria. Delivery, grammar, and vocab rubrics are
+//     Competitive Speech & Debate Extemp judging criteria. Delivery, grammar, and vocab rubrics are
 //     shared verbatim between the two modes; only the two "content" category
 //     rubrics and the length-cap word tiers differ. See
 //     IMPROMPTU_SYSTEM_INSTRUCTION / EXTEMP_SYSTEM_INSTRUCTION below.
