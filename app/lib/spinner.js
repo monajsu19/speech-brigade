@@ -266,7 +266,8 @@ export class Spinner {
     return i
   }
 
-  spin(initialVelocity) {
+  // target: optional item to land on, so several reels can be given distinct results.
+  spin(initialVelocity, target) {
     if (this.isSpinning) return
     if (!this.items.length) return
     this.isSpinning = true
@@ -290,7 +291,8 @@ export class Spinner {
     const LANDING_INDEX = naturalIndex + 1
     const REEL_COUNT = LANDING_INDEX + 3
 
-    const finalIndex = this._randomIndex(this.lastIndex)
+    const targetIndex = target === undefined ? -1 : this.items.indexOf(target)
+    const finalIndex = targetIndex >= 0 ? targetIndex : this._randomIndex(this.lastIndex)
     this.lastIndex = finalIndex
     const finalTopic = this.items[finalIndex]
 

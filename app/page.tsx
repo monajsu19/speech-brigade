@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
-import { TopicSpinner } from "./TopicSpinner";
+import { TopicSpinner, TopicSpinnerGroup } from "./TopicSpinner";
 
 type EventMode = "impromptu" | "extemp";
 type PreparedEventId = "oo" | "inf" | "di" | "hi" | "duo" | "poi";
@@ -148,7 +148,6 @@ type AnalyzingStage = "uploading" | "transcribing" | "analyzing" | "done";
 
 type ThemeBank = { theme: string; topics: string[] };
 type ExtempQuestion = { category: string; question: string };
-type SlotItem = { value: string; label?: string };
 
 interface PreparedEventConfig {
   id: PreparedEventId;
@@ -987,6 +986,7 @@ function formatClock(totalSeconds: number) {
 }
 
 const themeNames = themeBank.map((item) => item.theme);
+const extempQuestionTexts = extempQuestions.map((item) => item.question);
 
 function randomItem<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
@@ -1571,49 +1571,6 @@ function SpeechOutlineCard({ outline, compact = false }: { outline: SpeechOutlin
         </ul>
       </div>
       <p className="outline-direction">{outline.direction}</p>
-    </div>
-  );
-}
-
-function SlotWindows({
-  items,
-  activeIndex,
-  large,
-  onSelect,
-  selectedValue,
-}: {
-  items: SlotItem[];
-  activeIndex: number | null;
-  large?: boolean;
-  // When set, resolved slots become buttons that pick that item.
-  onSelect?: (index: number) => void;
-  selectedValue?: string;
-}) {
-  return (
-    <div className={`slot-stack ${large ? "large" : ""}`}>
-      {items.map((item, index) => {
-        const className = `slot-window ${activeIndex === index ? "spinning" : ""} ${item.value !== "—" ? "resolved" : ""}`;
-        const content = (
-          <>
-            {item.label ? <span>{item.label}</span> : null}
-            <strong>{activeIndex === index ? <i>{item.value}</i> : item.value}</strong>
-          </>
-        );
-        if (!onSelect) {
-          return <div className={className} key={`${index}-${item.value}`}>{content}</div>;
-        }
-        return (
-          <button
-            className={`${className} selectable ${selectedValue === item.value ? "locked" : ""}`}
-            type="button"
-            key={`${index}-${item.value}`}
-            onClick={() => onSelect(index)}
-            disabled={Boolean(selectedValue)}
-          >
-            {content}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -2715,8 +2672,6 @@ export default function SpeechBrigade() {
   // Bumped to remount the theme spinner reel when a round resets.
   const [themeReelKey, setThemeReelKey] = useState(0);
   const [themeSpinning, setThemeSpinning] = useState(false);
-  const [slotItems, setSlotItems] = useState<SlotItem[]>([{ value: "—" }, { value: "—" }, { value: "—" }]);
-  const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [lockedChoice, setLockedChoice] = useState("");
   // Impromptu/Extemp setup steps stack on one page; each appears after pressing Next.
   const [setupStage, setSetupStage] = useState<"spin" | "topics">("spin");
@@ -2962,8 +2917,6 @@ export default function SpeechBrigade() {
     setGameRoundStarted(false);
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
-    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-    setActiveSlot(null);
     setLockedChoice("");
     setSpeechAnalysisEnabled(true);
     setRecordingError("");
@@ -2975,8 +2928,6 @@ export default function SpeechBrigade() {
     setSetupStage("spin");
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
-    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-    setActiveSlot(null);
     setLockedChoice("");
     setSpeechAnalysisEnabled(true);
     setRecordingError("");
@@ -3006,8 +2957,6 @@ export default function SpeechBrigade() {
     setGameSession({ gameId });
     setGameRevealSpinning(false);
     setGameRoundStarted(false);
-    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-    setActiveSlot(null);
     setScreen("gameSetup");
   };
 
@@ -3047,8 +2996,6 @@ export default function SpeechBrigade() {
         setGameSession((current) => (current ? { gameId: current.gameId } : current));
         setGameRevealSpinning(false);
         setGameRoundStarted(false);
-        setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-        setActiveSlot(null);
       }
       screenRef.current = target;
       setScreenState(target);
@@ -3130,8 +3077,6 @@ export default function SpeechBrigade() {
     setGameSession({ gameId: gameSession.gameId });
     setGameRevealSpinning(false);
     setGameRoundStarted(false);
-    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-    setActiveSlot(null);
     setScreen("gameSetup");
   };
 
@@ -3448,13 +3393,11 @@ export default function SpeechBrigade() {
       }));
       setThemeReelKey((key) => key + 1);
       setThemeSpinning(false);
-      setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
       setLockedChoice("");
       setSetupStage("spin");
       setScreen("impromptuIntro");
     } else {
       setRound({ ...initialRound, mode: "extemp", prepSecondsAllocated: 1800, deliverySecondsAllocated: 420 });
-      setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
       setLockedChoice("");
       setSetupStage("spin");
       setScreen("extempIntro");
@@ -3478,72 +3421,21 @@ export default function SpeechBrigade() {
     setThemeSpinning(false);
   };
 
-  const spinSequentialSlots = (items: SlotItem[]) => {
-    audio.unlock();
-    setSlotItems([{ value: "—" }, { value: "—" }, { value: "—" }]);
-    setLockedChoice("");
-    const tickIntervals: number[] = [];
-
-    items.forEach((item, index) => {
-      window.setTimeout(() => {
-        setActiveSlot(index);
-        audio.slotTick();
-        tickIntervals[index] = window.setInterval(() => audio.slotTick(), 92);
-      }, index * 1450);
-      window.setTimeout(() => {
-        if (tickIntervals[index]) window.clearInterval(tickIntervals[index]);
-        setSlotItems((current) => current.map((slot, slotIndex) => (slotIndex === index ? item : slot)));
-        setActiveSlot(null);
-        audio.ding();
-      }, index * 1450 + 1180);
-    });
-  };
-
-  const spinTopics = () => {
-    const theme = themeBank.find((item) => item.theme === round.impromptuTheme) || randomItem(themeBank);
-    const topics = uniqueDraw(theme.topics, 3);
-    setRound((current) => ({ ...current, topicOptions: topics }));
-    spinSequentialSlots(topics.map((topic) => ({ value: topic })));
-  };
-
-  const spinQuestions = () => {
-    const questions = uniqueDraw(extempQuestions, 3, (question) => question.question);
+  const landQuestions = (texts: string[]) => {
+    const questions = texts.flatMap((text) => extempQuestions.find((item) => item.question === text) || []);
     setRound((current) => ({
       ...current,
       questionOptions: questions,
       prepSecondsAllocated: 1800,
       deliverySecondsAllocated: 420,
     }));
-    spinSequentialSlots(questions.map((question) => ({ value: question.question, label: question.category })));
   };
 
-  // Reveals game slots one at a time; labels stay visible while each slot spins.
-  const spinGameSlots = (items: SlotItem[], onDone: () => void) => {
-    if (activeSlot !== null || gameRevealSpinning) return;
+  // Multi-reel game draws clear the last result while the reels turn.
+  const startGameReveal = () => {
     audio.unlock();
     setGameRevealSpinning(true);
-    setSlotItems(items.map((item) => ({ value: "—", label: item.label })));
-    const tickIntervals: number[] = [];
-
-    items.forEach((item, index) => {
-      window.setTimeout(() => {
-        setActiveSlot(index);
-        audio.slotTick();
-        tickIntervals[index] = window.setInterval(() => audio.slotTick(), 92);
-      }, index * 1450);
-      window.setTimeout(() => {
-        if (tickIntervals[index]) window.clearInterval(tickIntervals[index]);
-        setSlotItems((current) => current.map((slot, slotIndex) => (slotIndex === index ? item : slot)));
-        setActiveSlot(null);
-        audio.ding();
-        if (index === items.length - 1) onDone();
-      }, index * 1450 + 1180);
-    });
-  };
-
-  const spinWordFusion = () => {
-    const words = uniqueDraw(wordFusionBank, 3);
-    spinGameSlots(words.map((word) => ({ value: word })), () => prepareWordFusionWords(words));
+    setGameSession((current) => (current ? { gameId: current.gameId } : current));
   };
 
   const startThreeTwoOneSpin = () => {
@@ -3554,17 +3446,6 @@ export default function SpeechBrigade() {
   const landThreeTwoOne = (argument: string) => {
     setGameSession({ gameId: "threeTwoOne", argument, roundIndex: 0 });
     setGameRevealSpinning(false);
-  };
-
-  const spinWeighing = () => {
-    const scenarios = uniqueDraw(weighingScenarios, 2);
-    spinGameSlots(
-      scenarios.map((scenario, index) => ({ value: scenario, label: `Speaker ${index + 1}: this is worse` })),
-      () => {
-        setGameSession({ gameId: "weighing", scenarios, roundIndex: 0 });
-        setGameRevealSpinning(false);
-      },
-    );
   };
 
   const chooseTopic = (topic: string) => {
@@ -3738,14 +3619,13 @@ export default function SpeechBrigade() {
   const warningTone = (second: number) => audio.countdown(second === 0);
 
   const selectedPrompt = round.mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
+  const impromptuThemeTopics = (themeBank.find((item) => item.theme === round.impromptuTheme) || themeBank[0]).topics;
   const playInteractionSound = (event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement | null;
     if (!target?.closest("button:not(:disabled), a[href]")) return;
     if (target.closest("[data-no-press-sound='true']")) return;
     audio.press();
   };
-
-  const slotsDrawn = activeSlot === null && slotItems.every((slot) => slot.value !== "—");
 
   const practicePrivacyOptions = (
     <PracticePrivacyOptions
@@ -3854,10 +3734,15 @@ export default function SpeechBrigade() {
               return (
                 <>
                   <p className="eyebrow step-heading"><strong>Spin</strong> for three words</p>
-                  <SlotWindows items={slotItems} activeIndex={activeSlot} />
-                  {gameSession?.words?.length && !gameRevealSpinning ? startButton : (
-                    <button className="primary" type="button" onClick={spinWordFusion} disabled={activeSlot !== null || gameRevealSpinning}>Spin</button>
-                  )}
+                  <TopicSpinnerGroup
+                    count={3}
+                    items={wordFusionBank}
+                    onSpinStart={startGameReveal}
+                    onLand={prepareWordFusionWords}
+                    useLabel="Start speaking"
+                    onUse={startGameTimer}
+                    canUse={Boolean(gameSession?.words?.length) && !gameRevealSpinning}
+                  />
                 </>
               );
             case "storyRelay":
@@ -3911,10 +3796,20 @@ export default function SpeechBrigade() {
               return (
                 <>
                   <p className="eyebrow step-heading"><strong>Spin</strong> for two scenarios</p>
-                  <SlotWindows items={slotItems.slice(0, 2)} activeIndex={activeSlot} />
-                  {gameSession?.scenarios?.length && !gameRevealSpinning ? startButton : (
-                    <button className="primary" type="button" onClick={spinWeighing} disabled={activeSlot !== null || gameRevealSpinning}>Spin</button>
-                  )}
+                  <TopicSpinnerGroup
+                    count={2}
+                    items={weighingScenarios}
+                    layout="row"
+                    labels={["Speaker 1: this is worse", "Speaker 2: this is worse"]}
+                    onSpinStart={startGameReveal}
+                    onLand={(scenarios) => {
+                      setGameSession({ gameId: "weighing", scenarios, roundIndex: 0 });
+                      setGameRevealSpinning(false);
+                    }}
+                    useLabel="Start speaking"
+                    onUse={startGameTimer}
+                    canUse={Boolean(gameSession?.scenarios?.length) && !gameRevealSpinning}
+                  />
                 </>
               );
           }
@@ -4441,24 +4336,22 @@ export default function SpeechBrigade() {
             {setupStage !== "spin" ? (
               <div className="setup-step spin-screen" ref={setupStage === "topics" ? latestSetupStepRef : undefined}>
                 <p className="eyebrow step-heading"><strong>Spin</strong> for a list of topics, and <strong>choose</strong> which to speak on</p>
-                <SlotWindows
-                  items={slotItems}
-                  activeIndex={activeSlot}
-                  onSelect={slotsDrawn ? (index) => chooseTopic(round.topicOptions[index]) : undefined}
+                <TopicSpinnerGroup
+                  count={3}
+                  items={impromptuThemeTopics}
+                  layout="row"
+                  onSpinStart={() => audio.unlock()}
+                  onLand={(topics) => setRound((current) => ({ ...current, topicOptions: topics }))}
+                  canSpin={round.topicOptions.length === 0}
+                  useLabel={round.prepSecondsAllocated === 0 ? "Start speaking" : "Start planning"}
+                  onUse={startPlanning}
+                  canUse={Boolean(round.selectedTopic)}
                   selectedValue={lockedChoice}
+                  onSelect={chooseTopic}
                 />
-                {slotsDrawn ? (
-                  <>
-                    {round.selectedTopic ? (
-                      <button className="primary" type="button" onClick={startPlanning}>
-                        {round.prepSecondsAllocated === 0 ? "Start speaking" : "Start planning"}
-                      </button>
-                    ) : null}
-                    <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
-                  </>
-                ) : (
-                  <button className="primary" type="button" onClick={spinTopics} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
-                )}
+                {round.topicOptions.length ? (
+                  <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+                ) : null}
               </div>
             ) : null}
           </section>
@@ -4544,25 +4437,25 @@ export default function SpeechBrigade() {
             </details>
             <div className="setup-step spin-screen">
               <p className="eyebrow step-heading"><strong>Spin</strong> for a list of questions, and <strong>choose</strong> which to speak on</p>
-              <SlotWindows
-                items={slotItems}
-                activeIndex={activeSlot}
-                large
-                onSelect={slotsDrawn ? (index) => chooseQuestion(round.questionOptions[index]) : undefined}
+              <TopicSpinnerGroup
+                count={3}
+                items={extempQuestionTexts}
+                labels={round.questionOptions.map((question) => question.category)}
+                onSpinStart={() => audio.unlock()}
+                onLand={landQuestions}
+                canSpin={round.questionOptions.length === 0}
+                useLabel="Start planning"
+                onUse={startPlanning}
+                canUse={Boolean(round.selectedQuestion)}
                 selectedValue={lockedChoice}
+                onSelect={(text) => {
+                  const question = round.questionOptions.find((item) => item.question === text);
+                  if (question) chooseQuestion(question);
+                }}
               />
-              {slotsDrawn ? (
-                <>
-                  {round.selectedQuestion ? (
-                    <button className="primary" type="button" onClick={startPlanning}>
-                      Start planning
-                    </button>
-                  ) : null}
-                  <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
-                </>
-              ) : (
-                <button className="primary" type="button" onClick={spinQuestions} disabled={activeSlot !== null || slotItems.some((slot) => slot.value !== "—")}>Spin</button>
-              )}
+              {round.questionOptions.length ? (
+                <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
+              ) : null}
             </div>
           </section>
         );

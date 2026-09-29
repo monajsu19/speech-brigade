@@ -18,7 +18,7 @@ export type SpinnerOptions = {
 export class Spinner {
   constructor(opts: SpinnerOptions);
   isSpinning: boolean;
-  spin(initialVelocity?: number): void;
+  spin(initialVelocity?: number, target?: string): void;
   setItems(items: string[]): void;
   getCurrentItem(): string | null;
   destroy(): void;

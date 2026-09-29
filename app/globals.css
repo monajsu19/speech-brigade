@@ -1463,53 +1463,9 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-.slot-stack {
-  display: grid;
-  gap: 0.85rem;
-  width: min(720px, 100%);
-  margin: 2rem auto 1.4rem;
-}
-
-.slot-stack.large {
-  width: min(880px, 100%);
-}
-
-.slot-window {
-  position: relative;
-  display: grid;
-  min-height: 5.8rem;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid rgba(201, 164, 91, 0.3);
-  border-radius: 22px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.2)),
-    var(--paper);
-  color: var(--ink);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 20px 70px rgba(10, 12, 20, 0.18);
-}
-
-.slot-window.selectable {
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.slot-window.selectable:hover:not(:disabled) {
-  transform: translateY(-3px);
-  border-color: rgba(201, 164, 91, 0.7);
-  box-shadow: var(--shadow);
-}
-
-.slot-window.selectable:disabled {
-  cursor: default;
-}
-
-.slot-window.selectable.locked {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px rgba(201, 164, 91, 0.45);
+/* Once a choice is made, the other cards fade back so the selected one stands out. */
+.topic-spinner-group:has(.selected) .topic-spinner-card.selectable:not(.selected) {
+  opacity: 0.55;
 }
 
 .eyebrow.step-heading {
@@ -1532,33 +1488,6 @@ h1 {
   line-height: 1.45;
 }
 
-.slot-stack.large .slot-window {
-  min-height: 8rem;
-  padding: 1.2rem clamp(1rem, 3vw, 2rem);
-}
-
-.slot-window::before,
-.slot-window::after {
-  position: absolute;
-  right: 0;
-  left: 0;
-  z-index: 1;
-  height: 24%;
-  content: "";
-  pointer-events: none;
-}
-
-.slot-window::before {
-  top: 0;
-  background: linear-gradient(var(--paper), transparent);
-}
-
-.slot-window::after {
-  bottom: 0;
-  background: linear-gradient(transparent, var(--paper));
-}
-
-.slot-window span,
 .choice-card span {
   display: block;
   margin-bottom: 0.35rem;
@@ -1567,32 +1496,6 @@ h1 {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-}
-
-.slot-window strong {
-  position: relative;
-  z-index: 2;
-  display: block;
-  font-family: var(--display);
-  font-size: clamp(1.7rem, 4vw, 3.2rem);
-  font-weight: 500;
-  line-height: 1.08;
-}
-
-.slot-stack.large .slot-window strong {
-  font-family: var(--sans);
-  font-size: clamp(1rem, 2.1vw, 1.35rem);
-  font-weight: 720;
-  line-height: 1.32;
-}
-
-.slot-window.spinning strong {
-  filter: blur(1.4px);
-  animation: slotSlide 170ms linear infinite;
-}
-
-.slot-window.resolved {
-  border-color: rgba(201, 164, 91, 0.74);
 }
 
 .result-reveal p {
@@ -1808,15 +1711,6 @@ h1 {
     opacity: 1;
     filter: blur(0);
     transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes slotSlide {
-  from {
-    transform: translateY(-75%);
-  }
-  to {
-    transform: translateY(75%);
   }
 }
 
@@ -3750,6 +3644,71 @@ h1 {
   .topic-spinner-card {
     padding: 80px 40px 40px;
   }
+}
+
+/* Multi-prompt draws: one compact reel card per prompt, with Spin/continue under all of them. */
+.topic-spinner-group {
+  display: grid;
+  gap: 14px;
+  width: min(768px, 100%);
+  margin: 2rem auto 0;
+}
+
+.topic-spinner-card.compact {
+  margin: 0;
+  padding: 36px 20px 12px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.topic-spinner-group.row {
+  grid-template-columns: repeat(var(--spinner-count), minmax(0, 1fr));
+}
+
+.topic-spinner-group.row .topic-spinner-card.compact {
+  padding: 36px 6px 12px;
+}
+
+@media (max-width: 640px) {
+  .topic-spinner-group.row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.topic-spinner-card.compact.selectable {
+  cursor: pointer;
+}
+
+.topic-spinner-card.compact.selectable:hover,
+.topic-spinner-card.compact.selectable:focus-visible {
+  border-color: #135248;
+  outline: none;
+}
+
+.topic-spinner-card.compact.selected {
+  border-color: #135248;
+  box-shadow: 0 0 0 3px rgba(19, 82, 72, 0.18), 0 2px 12px rgba(19, 82, 72, 0.08);
+}
+
+.topic-spinner-label {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  color: var(--gold);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.topic-spinner-group + .topic-spinner-actions {
+  margin-bottom: 1.4rem;
+}
+
+.topic-spinner-spin:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Games list: the two team drills sit centered above the four individual games. */
