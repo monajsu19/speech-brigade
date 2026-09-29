@@ -428,12 +428,19 @@ section {
   text-transform: uppercase;
 }
 
+/* Default page title; the landing page keeps its large hero title below. */
 h1 {
-  max-width: 12ch;
+  max-width: none;
   margin: 0 auto;
   font-family: var(--display);
-  font-size: clamp(3rem, 8.5vw, 7.7rem);
+  font-size: clamp(1.6rem, 4.5vh, 2.8rem);
   font-weight: 500;
+  line-height: 1.1;
+}
+
+.hero h1 {
+  max-width: 12ch;
+  font-size: clamp(3rem, 8.5vw, 7.7rem);
   line-height: 0.92;
 }
 
@@ -446,8 +453,7 @@ h1 {
 .countdown-screen h1,
 .narrow h1,
 .speech-workspace h1 {
-  max-width: 16ch;
-  font-size: clamp(2.6rem, 6vw, 5.4rem);
+  max-width: none;
 }
 
 .lede {
@@ -1029,8 +1035,6 @@ h1 {
 
 .event-setup h1 {
   max-width: none;
-  font-size: clamp(1.4rem, 5.2vw, 4.2rem);
-  white-space: nowrap;
 }
 
 .analysis-toggle strong {
@@ -3387,6 +3391,25 @@ h1 {
   color: var(--gold);
   font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* Every page except landing pins its heading at the same spot near the top and stacks
+   content downward, instead of centering the whole page vertically. */
+.screen-frame:not(.landing-frame) {
+  align-content: start;
+  align-items: start;
+  padding-top: clamp(1.5rem, 4vh, 3rem);
+}
+
+.screen-frame:not(.landing-frame) > section {
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+}
+
+.screen-frame:not(.landing-frame) > .delivery-layout {
+  align-content: start;
+  min-height: 0;
 }
 
 /* Topic spinner card and buttons (off_the_cuff topic-spinner spec, variant A §3.2). */
