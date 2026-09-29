@@ -3391,6 +3391,75 @@ h1 {
   padding: clamp(0.3rem, 1vh, 0.8rem);
 }
 
+/* Prepared/interp setup: timer first, with compact options and script upload below it. */
+.prepared-setup .setup-step.delivery-layout {
+  margin-top: clamp(0.8rem, 2vh, 1.4rem);
+}
+
+.prepared-setup .practice-options {
+  width: min(340px, 100%);
+  gap: 0.6rem;
+}
+
+.prepared-setup .practice-options .analysis-toggle {
+  gap: 0.45rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(35, 30, 20, 0.06);
+  font-size: 0.88rem;
+}
+
+.prepared-setup .analysis-toggle i {
+  width: 2.6rem;
+  height: 1.45rem;
+}
+
+.prepared-setup .analysis-toggle i::after {
+  left: 0.18rem;
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.prepared-setup .analysis-toggle input:checked + i::after {
+  transform: translate(1.15rem, -50%);
+}
+
+.prepared-setup .workspace-actions.single {
+  width: min(340px, 100%);
+}
+
+.prepared-setup .workspace-card {
+  min-height: 0;
+  gap: 0.35rem;
+  padding: 0.75rem 1rem;
+  border-radius: 16px;
+}
+
+.prepared-setup .workspace-card strong {
+  font-size: 1.15rem;
+}
+
+.prepared-setup .workspace-card small {
+  font-size: 0.8rem;
+}
+
+.prepared-setup .workspace-card .document-icon {
+  width: 1.6rem;
+  height: 2rem;
+}
+
+.prepared-setup .workspace-card .document-icon::before {
+  width: 0.6rem;
+  height: 0.6rem;
+}
+
+.prepared-setup .workspace-card .document-icon::after {
+  left: 0.35rem;
+  right: 0.35rem;
+  bottom: 0.45rem;
+  height: 0.3rem;
+}
+
 .home-button.icon-button {
   display: inline-grid;
   place-items: center;

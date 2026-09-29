@@ -4008,11 +4008,34 @@ export default function SpeechBrigade() {
           );
         }
         return (
-          <section className="reading event-setup speech-workspace">
+          <section className="reading event-setup speech-workspace prepared-setup">
             <h1>{selectedPreparedEvent.name}</h1>
+            <div className="setup-step delivery-layout" ref={preparedStage === "setup" ? undefined : latestSetupStepRef}>
+              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? (
+                recordingError ? (
+                  <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+                ) : (
+                  <RecordingNotice />
+                )
+              ) : null}
+              <TimerPanel
+                seconds={selectedPreparedEvent.performanceDurationSeconds}
+                buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
+                timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
+                active={preparedStage === "performance"}
+                onStart={() => {
+                  audio.unlock();
+                  setPreparedResult(null);
+                  setPreparedStage("performance");
+                }}
+                onComplete={handlePreparedPerformanceComplete}
+                onWarningSecond={warningTone}
+              />
+              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? <RecordingPrivacyFooter /> : null}
+            </div>
             {practicePrivacyOptions}
             <details className="how-it-works">
-              <summary>{selectedPreparedEvent.shortDescription}</summary>
+              <summary>Rules</summary>
               <InstructionBlock>
                 {selectedPreparedEvent.introParagraphs.map((paragraph) => (
                   <p key={paragraph}>{paragraph}</p>
@@ -4052,29 +4075,6 @@ export default function SpeechBrigade() {
                 <p>{preparedScript.message}</p>
               </div>
             ) : null}
-            <div className="setup-step delivery-layout" ref={preparedStage === "setup" ? undefined : latestSetupStepRef}>
-              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? (
-                recordingError ? (
-                  <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
-                ) : (
-                  <RecordingNotice />
-                )
-              ) : null}
-              <TimerPanel
-                seconds={selectedPreparedEvent.performanceDurationSeconds}
-                buttonLabel="I'm done"
-                timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
-                active={preparedStage === "performance"}
-                onStart={() => {
-                  audio.unlock();
-                  setPreparedResult(null);
-                  setPreparedStage("performance");
-                }}
-                onComplete={handlePreparedPerformanceComplete}
-                onWarningSecond={warningTone}
-              />
-              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? <RecordingPrivacyFooter /> : null}
-            </div>
             <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
