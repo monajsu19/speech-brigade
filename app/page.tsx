@@ -2507,8 +2507,13 @@ function VaultCard({
   const content = (
     <>
       <div className="vault-card-head">
-        <span className="vault-badge">{formatAnalysisModeLabel(recording.mode)}</span>
-        <span className="vault-date">{formatVaultDate(recording.created_at)}</span>
+        <span className="vault-card-meta">
+          <span className="vault-badge">{formatAnalysisModeLabel(recording.mode)}</span>
+          <span className="vault-date">{formatVaultDate(recording.created_at)}</span>
+        </span>
+        {typeof recording.analysis?.scorecard?.stars === "number" ? (
+          <StarRating value={recording.analysis.scorecard.stars} />
+        ) : null}
       </div>
       <p className="vault-prompt">{recording.prompt}</p>
       <div className="vault-card-foot">
@@ -2591,6 +2596,11 @@ export default function SpeechBrigade() {
   const [vaultRecordings, setVaultRecordings] = useState<VaultRecording[]>([]);
   const [vaultLoading, setVaultLoading] = useState(false);
   const [vaultError, setVaultError] = useState("");
+  // The vault loads 10 recordings, then 20 more on scroll, then the rest on the next scroll.
+  const [vaultHasMore, setVaultHasMore] = useState(false);
+  const [vaultLoadingMore, setVaultLoadingMore] = useState(false);
+  const vaultRequestRef = useRef(0);
+  const vaultSentinelRef = useRef<HTMLDivElement | null>(null);
   const [foundersOpen, setFoundersOpen] = useState(false);
   const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
   const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
@@ -2650,28 +2660,72 @@ export default function SpeechBrigade() {
     return undefined;
   }, [screen, session, setScreen]);
 
+  // Page sizes by offset: the first 10, the next 20, then everything else.
+  const fetchVaultPage = async (offset: number) => {
+    if (!supabase) return { rows: [] as VaultRecording[], hasMore: false, error: "" };
+    const pageSize = offset === 0 ? 10 : offset < 30 ? 30 - offset : null;
+    let query = supabase
+      .from("recordings")
+      .select("id, prompt, mode, duration_seconds, transcript, transcript_data, audio_url, analysis, created_at")
+      .order("created_at", { ascending: false });
+    // One extra row tells us whether another page exists.
+    query = pageSize === null ? query.range(offset, offset + 9999) : query.range(offset, offset + pageSize);
+    const { data, error } = await query;
+    if (error) return { rows: [] as VaultRecording[], hasMore: false, error: error.message };
+    const rows = (data || []) as VaultRecording[];
+    if (pageSize === null) return { rows, hasMore: false, error: "" };
+    return { rows: rows.slice(0, pageSize), hasMore: rows.length > pageSize, error: "" };
+  };
+
+  const loadMoreVault = useCallback(() => {
+    if (vaultLoadingMore || !vaultHasMore) return;
+    const requestId = vaultRequestRef.current;
+    setVaultLoadingMore(true);
+    void fetchVaultPage(vaultRecordings.length).then(({ rows, hasMore, error }) => {
+      if (requestId !== vaultRequestRef.current) return;
+      if (error) {
+        setVaultError(error);
+        setVaultHasMore(false);
+      } else {
+        setVaultRecordings((current) => [...current, ...rows]);
+        setVaultHasMore(hasMore);
+      }
+      setVaultLoadingMore(false);
+    });
+  }, [vaultLoadingMore, vaultHasMore, vaultRecordings.length]);
+
+  useEffect(() => {
+    const sentinel = vaultSentinelRef.current;
+    if (screen !== "pastSpeeches" || !sentinel || !vaultHasMore) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMoreVault();
+    });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [screen, vaultHasMore, loadMoreVault]);
+
   useEffect(() => {
     if (screen !== "pastSpeeches" || !session || !supabase) return undefined;
     let cancelled = false;
     const loadingId = window.setTimeout(() => {
       if (cancelled) return;
       setVaultLoading(true);
+      setVaultLoadingMore(false);
       setVaultError("");
     }, 0);
-    supabase
-      .from("recordings")
-      .select("id, prompt, mode, duration_seconds, transcript, transcript_data, audio_url, analysis, created_at")
-      .order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          setVaultError(error.message);
-          setVaultRecordings([]);
-        } else {
-          setVaultRecordings((data || []) as VaultRecording[]);
-        }
-        setVaultLoading(false);
-      });
+    const requestId = ++vaultRequestRef.current;
+    fetchVaultPage(0).then(({ rows, hasMore, error }) => {
+      if (cancelled || requestId !== vaultRequestRef.current) return;
+      if (error) {
+        setVaultError(error);
+        setVaultRecordings([]);
+        setVaultHasMore(false);
+      } else {
+        setVaultRecordings(rows);
+        setVaultHasMore(hasMore);
+      }
+      setVaultLoading(false);
+    });
     return () => {
       cancelled = true;
       window.clearTimeout(loadingId);
@@ -4124,8 +4178,7 @@ export default function SpeechBrigade() {
       case "pastSpeeches":
         return (
           <section className="narrow auth-screen">
-            <p className="eyebrow">Listen to Past Speeches</p>
-            <h1>Your vault</h1>
+            <h1>Recent</h1>
             {!isSupabaseConfigured ? (
               <p className="lede">Supabase is not configured for this local preview, so saved recordings are unavailable.</p>
             ) : !session ? (
@@ -4144,11 +4197,18 @@ export default function SpeechBrigade() {
                 ) : vaultRecordings.length === 0 ? (
                   <p className="vault-status">No recordings yet — turn on Save recording before a round to see it here.</p>
                 ) : (
-                  <div className="vault-list">
-                    {vaultRecordings.map((recording) => (
-                      <VaultCard key={recording.id} recording={recording} onOpen={openVaultAnalysis} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="vault-list">
+                      {vaultRecordings.map((recording) => (
+                        <VaultCard key={recording.id} recording={recording} onOpen={openVaultAnalysis} />
+                      ))}
+                    </div>
+                    {vaultHasMore ? (
+                      <div className="vault-sentinel" ref={vaultSentinelRef}>
+                        {vaultLoadingMore ? <p className="vault-status">Loading more recordings…</p> : null}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             )}
@@ -4486,7 +4546,7 @@ export default function SpeechBrigade() {
 	            type="button"
 		            onClick={() => setScreen("pastSpeeches")}
 	          >
-	            Listen to Past Speeches
+	            Recent
 	          </button>
 	          {session ? (
 	            <button
