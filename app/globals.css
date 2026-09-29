@@ -1691,53 +1691,33 @@ h1 {
   padding: clamp(1rem, 3vw, 2rem);
 }
 
-.timer-ring {
+/* Countdown dial (DURATION_DIAL_SPEC.md): the app uses the platform system font. */
+.countdown-dial {
   display: grid;
-  width: min(62vw, 26rem);
-  aspect-ratio: 1;
   place-items: center;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at center, var(--paper) 0 58%, transparent 59%),
-    conic-gradient(var(--gold) var(--progress), rgba(24, 26, 31, 0.12) 0);
-  box-shadow: 0 28px 100px rgba(0, 0, 0, 0.25);
+  padding: 8px 0;
 }
 
-.timer-ring > div {
-  display: grid;
-  width: 80%;
-  aspect-ratio: 1;
-  place-items: center;
-  border-radius: 50%;
-  background: linear-gradient(145deg, rgba(255, 252, 244, 0.95), rgba(246, 238, 219, 0.85));
-  text-align: center;
+.countdown-dial svg {
+  display: block;
+  overflow: visible;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
 }
 
-.timer-ring span {
-  align-self: end;
-  color: rgba(24, 26, 31, 0.58);
-  font-size: 0.82rem;
-  font-weight: 820;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+/* Before Start, the round timer's dial is dragged to set its length. */
+.countdown-dial.draggable svg {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.timer-ring strong {
-  align-self: start;
-  color: var(--ink);
-  font-family: var(--display);
-  font-size: clamp(4rem, 12vw, 7rem);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  line-height: 0.98;
+.countdown-dial.draggable svg:active {
+  cursor: grabbing;
 }
 
 .big-action {
   color: var(--ink);
 }
-
-.urgent strong,
-.urgent .timer-ring strong,
 
 .countdown-screen {
   color: var(--ink);
@@ -1932,10 +1912,6 @@ h1 {
 
   .choice-card {
     min-height: 7.5rem;
-  }
-
-  .timer-ring {
-    width: min(82vw, 23rem);
   }
 
   .creator-float {

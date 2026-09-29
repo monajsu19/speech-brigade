@@ -1168,8 +1168,140 @@ function useCountdownTimer({
   return { remaining, finishNow, progress: seconds ? (seconds - remaining) / seconds : 1 };
 }
 
+// Countdown dial from the Speech Pact app's recording screen (DURATION_DIAL_SPEC.md, section 7):
+// a green arc for the time remaining that starts at 12 o'clock and runs clockwise, a knob at its
+// end, and the remaining time in the center.
+const DIAL_SIZE_FULL = 260;
+const DIAL_RADIUS_FULL = 110;
+const DIAL_SIZE_COMPACT = 200;
+const DIAL_HEIGHT_COMPACT = 667;
+const DIAL_HEIGHT_FULL = 780;
+
+function formatDuration(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function pointOnCircle(angleDeg: number, center: number, radius: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return { x: center + radius * Math.cos(rad), y: center + radius * Math.sin(rad) };
+}
+
+// The dial shrinks from 260 to 200 as the window gets shorter than 780px, down to 667px.
+function useDialGeometry() {
+  const [windowHeight, setWindowHeight] = useState(() => (typeof window === "undefined" ? DIAL_HEIGHT_FULL : window.innerHeight));
+  useEffect(() => {
+    const onResize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const t = Math.min(1, Math.max(0, (windowHeight - DIAL_HEIGHT_COMPACT) / (DIAL_HEIGHT_FULL - DIAL_HEIGHT_COMPACT)));
+  const size = Math.round(DIAL_SIZE_COMPACT + (DIAL_SIZE_FULL - DIAL_SIZE_COMPACT) * t);
+  const scale = size / DIAL_SIZE_FULL;
+  const radius = size * (DIAL_RADIUS_FULL / DIAL_SIZE_FULL);
+  return {
+    size,
+    center: size / 2,
+    radius,
+    circumference: 2 * Math.PI * radius,
+    strokeWidth: Math.max(9, Math.round(12 * scale)),
+    handleOuterR: Math.max(8, Math.round(11 * scale)),
+    handleInnerR: Math.max(4, Math.round(5 * scale)),
+    bigFontSize: Math.max(30, Math.round(40 * scale)),
+    bigLabelYOffset: Math.round(24 * scale),
+  };
+}
+
+// Dragging follows the pointer's angle around the center (DURATION_DIAL_SPEC.md, sections 1 and 5):
+// 12 o'clock is zero, values grow clockwise in 5 s steps, clamped to 15 s..scaleMax, no wrap-around.
+const DIAL_MIN_SECONDS = 15;
+const DIAL_STEP_SECONDS = 5;
+
+function CountdownDial({
+  remaining,
+  total,
+  scaleMax = total,
+  onDrag,
+}: {
+  remaining: number;
+  total: number;
+  // Seconds represented by one full turn of the ring.
+  scaleMax?: number;
+  // When set, dragging anywhere on the dial picks a new duration.
+  onDrag?: (seconds: number) => void;
+}) {
+  const dial = useDialGeometry();
+  const draggingRef = useRef(false);
+  const left = Math.max(0, Math.min(total, remaining));
+  const angle = scaleMax > 0 ? Math.min(360, (left / scaleMax) * 360) : 0;
+
+  const secondsAt = (event: React.PointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const cx = event.clientX - rect.left - rect.width / 2;
+    const cy = event.clientY - rect.top - rect.height / 2;
+    let angleDeg = (Math.atan2(cy, cx) * 180) / Math.PI + 90;
+    if (angleDeg < 0) angleDeg += 360;
+    const raw = Math.round((angleDeg / 360) * scaleMax);
+    return Math.max(DIAL_MIN_SECONDS, Math.min(scaleMax, Math.round(raw / DIAL_STEP_SECONDS) * DIAL_STEP_SECONDS));
+  };
+
+  const dragHandlers = onDrag
+    ? {
+        onPointerDown: (event: React.PointerEvent<SVGSVGElement>) => {
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          draggingRef.current = true;
+        },
+        onPointerMove: (event: React.PointerEvent<SVGSVGElement>) => {
+          if (draggingRef.current) onDrag(secondsAt(event));
+        },
+        onPointerUp: () => {
+          draggingRef.current = false;
+        },
+        onPointerCancel: () => {
+          draggingRef.current = false;
+        },
+      }
+    : {};
+  const dashArray = `${(angle / 360) * dial.circumference} ${dial.circumference}`;
+  const handlePos = pointOnCircle(angle, dial.center, dial.radius);
+
+  return (
+    <div className={`countdown-dial ${onDrag ? "draggable" : ""}`}>
+      <svg
+        width={dial.size}
+        height={dial.size}
+        viewBox={`0 0 ${dial.size} ${dial.size}`}
+        role="timer"
+        aria-label={`${formatDuration(left)} remaining`}
+        {...dragHandlers}
+      >
+        <circle cx={dial.center} cy={dial.center} r={dial.radius} stroke="#E8E4DE" strokeWidth={dial.strokeWidth} fill="none" />
+        <circle
+          cx={dial.center}
+          cy={dial.center}
+          r={dial.radius}
+          stroke="#135248"
+          strokeWidth={dial.strokeWidth}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={dashArray}
+          transform={`rotate(-90 ${dial.center} ${dial.center})`}
+        />
+        <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleOuterR} fill="#135248" />
+        <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleInnerR} fill="#FFFFFF" />
+        <text x={dial.center} y={dial.center + 2} textAnchor="middle" fontSize={dial.bigFontSize} fontWeight="700" fill="#1E1E1E">
+          {formatDuration(left)}
+        </text>
+        <text x={dial.center} y={dial.center + dial.bigLabelYOffset} textAnchor="middle" fontSize={12} fontWeight="500" fill="#999999">
+          remaining
+        </text>
+      </svg>
+    </div>
+  );
+}
 function TimerPanel({
-  label,
   seconds,
   buttonLabel,
   onComplete,
@@ -1180,7 +1312,6 @@ function TimerPanel({
   active = true,
   onStart,
 }: {
-  label: string;
   seconds: number;
   buttonLabel?: string;
   onComplete: (elapsed: number, completion: CompletionStatus) => void;
@@ -1192,17 +1323,16 @@ function TimerPanel({
   active?: boolean;
   onStart?: () => void;
 }) {
-  const { remaining, finishNow, progress } = useCountdownTimer({
+  const { remaining, finishNow } = useCountdownTimer({
     seconds,
     active,
     onComplete,
     onWarningSecond,
     timerKey,
   });
-  const urgent = remaining <= 5 && remaining > 0;
 
   return (
-    <section className={`timer-stage ${urgent ? "urgent" : ""}`}>
+    <section className="timer-stage">
       {topic ? (
         <div className="topic-banner">
           <span>{topicLabel || `Your ${topic.endsWith("?") ? "question" : "topic"}`}</span>
@@ -1210,12 +1340,7 @@ function TimerPanel({
         </div>
       ) : null}
       <div className="timer-card">
-        <div className="timer-ring" style={{ "--progress": `${Math.min(1, Math.max(0, progress)) * 360}deg` } as React.CSSProperties}>
-          <div>
-            <span>{label}</span>
-            <strong>{formatTime(remaining)}</strong>
-          </div>
-        </div>
+        <CountdownDial remaining={remaining} total={seconds} />
         {!active && onStart ? (
           <button className="primary big-action" type="button" onClick={onStart}>
             Start
@@ -1359,14 +1484,13 @@ function GameRoundTimer({
   onWarningSecond: (second: number) => void;
   onTwist: () => void;
 }) {
-  const { remaining, finishNow, progress } = useCountdownTimer({
+  const { remaining, finishNow } = useCountdownTimer({
     seconds,
     active: started,
     onComplete: (elapsed) => onComplete(elapsed),
     onWarningSecond,
     timerKey: label,
   });
-  const urgent = remaining <= 5 && remaining > 0;
   const twistThresholds = [120, 60, 30];
   const twistCount = started && twists ? twistThresholds.filter((at) => remaining <= at).length : 0;
   const shownTwistsRef = useRef(0);
@@ -1381,7 +1505,7 @@ function GameRoundTimer({
   const visibleTwist = twists && twistCount > 0 ? twists[twistCount - 1] : null;
 
   return (
-    <section className={`timer-stage ${urgent ? "urgent" : ""}`}>
+    <section className="timer-stage">
       {visibleTwist ? (
         <div className="plot-twist-card" key={visibleTwist}>
           <span>Plot Twist</span>
@@ -1389,12 +1513,7 @@ function GameRoundTimer({
         </div>
       ) : null}
       <div className="timer-card">
-        <div className="timer-ring" style={{ "--progress": `${Math.min(1, Math.max(0, progress)) * 360}deg` } as React.CSSProperties}>
-          <div>
-            <span>{label}</span>
-            <strong>{formatTime(remaining)}</strong>
-          </div>
-        </div>
+        <CountdownDial remaining={remaining} total={seconds} />
         {started ? (
           <button className="secondary big-action" type="button" onClick={finishNow}>
             {buttonLabel}
@@ -3931,7 +4050,6 @@ export default function SpeechBrigade() {
                 )
               ) : null}
               <TimerPanel
-                label="Performance"
                 seconds={selectedPreparedEvent.performanceDurationSeconds}
                 buttonLabel="I'm done"
                 timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
@@ -4295,7 +4413,6 @@ export default function SpeechBrigade() {
             {setupStage === "prep" ? (
               <div className="setup-step" ref={latestSetupStepRef}>
                 <TimerPanel
-                  label="Preparation"
                   seconds={round.prepSecondsAllocated}
                   buttonLabel="I'm done"
                   topic={round.selectedTopic}
@@ -4318,7 +4435,6 @@ export default function SpeechBrigade() {
 	              )
 	            ) : null}
 	            <TimerPanel
-              label="Delivery"
               seconds={round.deliverySecondsAllocated}
               buttonLabel="I'm done"
               topic={round.selectedTopic}
@@ -4380,7 +4496,6 @@ export default function SpeechBrigade() {
             {setupStage === "prep" ? (
               <div className="setup-step" ref={latestSetupStepRef}>
                 <TimerPanel
-                  label="Preparation"
                   seconds={1800}
                   buttonLabel="I'm done"
                   topic={selectedPrompt}
@@ -4403,7 +4518,6 @@ export default function SpeechBrigade() {
 	              )
 	            ) : null}
 	            <TimerPanel
-              label="Delivery"
               seconds={420}
               buttonLabel="I'm done"
               topic={selectedPrompt}
