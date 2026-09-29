@@ -225,6 +225,8 @@ interface SpeakingGameSession {
   scenarios?: string[];
   roundIndex?: number;
   roundElapsedSeconds?: number[];
+  // Round lengths picked on the dial, by round index.
+  roundSeconds?: number[];
 }
 
 type RoundState = {
@@ -1418,6 +1420,7 @@ function GameTimer({
   started,
   onStart,
   onRoundComplete,
+  onSelectRound,
   onWarningSecond,
   onTwist,
 }: {
@@ -1425,7 +1428,8 @@ function GameTimer({
   session: SpeakingGameSession;
   started: boolean;
   onStart: () => void;
-  onRoundComplete: (elapsed: number) => void;
+  onRoundComplete: (elapsed: number, seconds: number) => void;
+  onSelectRound: (index: number) => void;
   onWarningSecond: (second: number) => void;
   onTwist: () => void;
 }) {
@@ -1439,12 +1443,16 @@ function GameTimer({
       {config.rounds.length > 1 ? (
         <ol className="drill-rounds" aria-label="Rounds">
           {config.rounds.map((item, index) => (
-            <li
-              key={item.label}
-              className={index === roundIndex ? "active" : index < roundIndex ? "done" : ""}
-              aria-current={index === roundIndex ? "step" : undefined}
-            >
-              {item.label}
+            <li key={item.label}>
+              <button
+                type="button"
+                className={index === roundIndex ? "active" : session.roundElapsedSeconds?.[index] != null ? "done" : ""}
+                aria-current={index === roundIndex ? "step" : undefined}
+                disabled={started}
+                onClick={() => onSelectRound(index)}
+              >
+                {item.label}
+              </button>
             </li>
           ))}
         </ol>
@@ -1453,7 +1461,7 @@ function GameTimer({
       <GameRoundTimer
         key={`${config.id}-${roundIndex}`}
         label={round.label}
-        seconds={round.seconds}
+        seconds={session.roundSeconds?.[roundIndex] ?? round.seconds}
         buttonLabel={isLast ? "I'm done" : config.id === "weighing" ? "Next speaker" : "Next round"}
         twists={session.gameId === "storyRelay" ? session.twists : undefined}
         started={started}
@@ -1484,14 +1492,20 @@ function GameRoundTimer({
   twists?: string[];
   started: boolean;
   onStart: () => void;
-  onComplete: (elapsed: number) => void;
+  onComplete: (elapsed: number, seconds: number) => void;
   onWarningSecond: (second: number) => void;
   onTwist: () => void;
 }) {
+  // Before Start, the dial can be dragged to change this round's length.
+  const [duration, setDuration] = useState(seconds);
   const { remaining, finishNow } = useCountdownTimer({
-    seconds,
+    seconds: duration,
     active: started,
-    onComplete: (elapsed) => onComplete(elapsed),
+    // Running out of time stays on the round; the button moves on.
+    onComplete: (elapsed, completion) => {
+      if (completion === "expired") return;
+      onComplete(elapsed, duration);
+    },
     onWarningSecond,
     timerKey: label,
   });
@@ -1517,7 +1531,12 @@ function GameRoundTimer({
         </div>
       ) : null}
       <div className="timer-card">
-        <CountdownDial remaining={remaining} total={seconds} />
+        <CountdownDial
+          remaining={started ? remaining : duration}
+          total={duration}
+          scaleMax={Math.max(180, seconds)}
+          onDrag={started ? undefined : setDuration}
+        />
         {started ? (
           <button className="secondary big-action" type="button" onClick={finishNow}>
             {buttonLabel}
@@ -3074,17 +3093,30 @@ export default function SpeechBrigade() {
     audio.ding();
   };
 
-  const completeGameRound = (elapsed: number) => {
+  const completeGameRound = (elapsed: number, seconds: number) => {
     if (!gameSession || !gameConfig) return;
     const roundIndex = gameSession.roundIndex || 0;
-    const roundElapsedSeconds = [...(gameSession.roundElapsedSeconds || []), Math.round(elapsed)];
+    const roundElapsedSeconds = [...(gameSession.roundElapsedSeconds || [])];
+    roundElapsedSeconds[roundIndex] = Math.round(elapsed);
+    const roundSeconds = [...(gameSession.roundSeconds || [])];
+    roundSeconds[roundIndex] = seconds;
     setGameRoundStarted(false);
-    if (roundIndex < gameConfig.rounds.length - 1) {
-      setGameSession({ ...gameSession, roundIndex: roundIndex + 1, roundElapsedSeconds });
+    // Rounds can be picked out of order, so move on to the next one not yet spoken.
+    const count = gameConfig.rounds.length;
+    const nextIndex = Array.from({ length: count - 1 }, (_, step) => (roundIndex + 1 + step) % count).find(
+      (index) => roundElapsedSeconds[index] == null,
+    );
+    if (nextIndex !== undefined) {
+      setGameSession({ ...gameSession, roundIndex: nextIndex, roundElapsedSeconds, roundSeconds });
       return;
     }
-    setGameSession({ ...gameSession, roundElapsedSeconds });
+    setGameSession({ ...gameSession, roundElapsedSeconds, roundSeconds });
     setScreen("gameResults");
+  };
+
+  const selectGameRound = (index: number) => {
+    if (!gameSession || gameRoundStarted) return;
+    setGameSession({ ...gameSession, roundIndex: index });
   };
 
   const startGameTimer = () => {
@@ -3923,6 +3955,7 @@ export default function SpeechBrigade() {
                 setGameRoundStarted(true);
               }}
               onRoundComplete={completeGameRound}
+              onSelectRound={selectGameRound}
               onWarningSecond={warningTone}
               onTwist={audio.ding}
             />
@@ -3954,7 +3987,7 @@ export default function SpeechBrigade() {
                 <SummaryRow
                   key={round.label}
                   label={gameConfig.rounds.length > 1 ? round.label : "Time used"}
-                  value={`${formatTime(gameSession.roundElapsedSeconds?.[index] || 0)} of ${formatTime(round.seconds)}`}
+                  value={`${formatTime(gameSession.roundElapsedSeconds?.[index] || 0)} of ${formatTime(gameSession.roundSeconds?.[index] ?? round.seconds)}`}
                 />
               ))}
             </div>

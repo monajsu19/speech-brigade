@@ -1285,24 +1285,37 @@ h1 {
   list-style: none;
 }
 
-.drill-rounds li {
+.drill-rounds button {
   padding: 0.35rem 0.85rem;
   border: 1px solid rgba(201, 164, 91, 0.34);
   border-radius: 999px;
+  background: transparent;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 
-.drill-rounds li.active {
+.drill-rounds button:hover:not(:disabled):not(.active) {
+  border-color: var(--gold);
+  color: var(--ink);
+}
+
+/* Rounds can't be switched while a timer is running. */
+.drill-rounds button:disabled {
+  cursor: default;
+}
+
+.drill-rounds button.active {
   border-color: var(--gold);
   background: var(--gold);
   color: var(--paper);
 }
 
-.drill-rounds li.done {
+.drill-rounds button.done {
   text-decoration: line-through;
   opacity: 0.6;
 }
