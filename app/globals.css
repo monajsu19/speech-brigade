@@ -3960,6 +3960,137 @@ h1 {
   }
 }
 
+/* Prepared/interp setup: analysis, save, and script upload sit as plain controls in the top right,
+   leaving the timer centered. */
+.event-setup {
+  position: relative;
+}
+
+.setup-corner {
+  position: absolute;
+  top: clamp(1rem, 2vw, 2rem);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  justify-items: start;
+  gap: 0.45rem;
+}
+
+.setup-corner .practice-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: start;
+  gap: 0.45rem;
+  width: auto;
+  margin: 0;
+}
+
+.setup-corner .practice-options .analysis-toggle {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  width: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 0.85rem;
+}
+
+.setup-corner .analysis-toggle strong {
+  font-weight: 600;
+}
+
+.setup-corner .analysis-toggle i {
+  width: 2.2rem;
+  height: 1.25rem;
+}
+
+.setup-corner .analysis-toggle i::after {
+  left: 0.15rem;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.setup-corner .analysis-toggle input:checked + i::after {
+  transform: translate(0.95rem, -50%);
+}
+
+.setup-corner .info-button {
+  width: 1.05rem;
+  height: 1.05rem;
+  font-size: 0.68rem;
+}
+
+.corner-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.2rem 0 0;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(201, 164, 91, 0.45);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.corner-upload:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(201, 164, 91, 0.1);
+}
+
+.corner-upload:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.corner-upload .document-icon {
+  box-shadow: none;
+  border-radius: 0.15rem;
+  width: 0.8rem;
+  height: 1rem;
+}
+
+.corner-upload .document-icon::before,
+.corner-upload .document-icon::after {
+  display: none;
+}
+
+.setup-corner .rules-link {
+  /* Lines up with the toggle labels: the switch's width plus its gap. */
+  margin: 0.15rem 0 0 2.75rem;
+  font-size: 0.85rem;
+}
+
+/* Narrow screens: the options drop to the bottom of the page, with How it works under them. */
+@media (max-width: 900px) {
+  .event-setup {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setup-corner {
+    position: static;
+    order: 1;
+    justify-items: center;
+    margin-top: clamp(1.6rem, 4vw, 2.4rem);
+  }
+
+  .setup-corner .practice-options {
+    justify-items: start;
+  }
+
+  .setup-corner .rules-link {
+    margin-top: 0.4rem;
+    margin-left: 0;
+  }
+}
+
 /* Rules page: one event's rules as plain reading copy. */
 .rules-detail .instruction-copy {
   width: min(680px, 100%);
@@ -3996,4 +4127,37 @@ h1 {
 
 .timer-control.stop:disabled:hover {
   background: rgba(198, 65, 50, 0.14);
+}
+
+/* The attached script sits as a small card under the corner's upload button. The full
+   message stays in its tooltip. */
+.setup-corner .script-status.compact,
+.setup-corner .script-context-card.compact {
+  width: auto;
+  max-width: 15rem;
+  margin: 0;
+  text-align: left;
+}
+
+.setup-corner .script-status.compact {
+  font-size: 0.78rem;
+}
+
+.setup-corner .script-context-card.compact {
+  gap: 0.1rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 12px;
+}
+
+.setup-corner .script-context-card.compact strong {
+  overflow: hidden;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.setup-corner .script-context-card.compact p {
+  font-size: 0.74rem;
+  line-height: 1.3;
 }

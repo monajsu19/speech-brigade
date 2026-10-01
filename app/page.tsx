@@ -919,14 +919,6 @@ const extempQuestions: ExtempQuestion[] = [
   ["IX · Global Institutions", "How should governments balance climate policy, energy security, and economic growth?"],
 ].map(([category, question]) => ({ category, question }));
 
-const allocationOptions = [
-  { prep: 0, delivery: 420 },
-  { prep: 60, delivery: 360 },
-  { prep: 120, delivery: 300 },
-  { prep: 180, delivery: 240 },
-  { prep: 240, delivery: 180 },
-];
-
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
@@ -1877,15 +1869,6 @@ function PracticePrivacyOptions({
         info={<PrivacyInfoButton />}
       />
     </div>
-  );
-}
-
-function RecordingNotice() {
-  return (
-    <p className="recording-notice">
-      <span className="record-dot" />
-      Recording audio
-    </p>
   );
 }
 
@@ -2844,7 +2827,6 @@ export default function SpeechBrigade() {
     }
   }, []);
   const [round, setRound] = useState<RoundState>(initialRound);
-  const [allocationIndex, setAllocationIndex] = useState(2);
   // Bumped to remount the theme spinner reel when a round resets.
   const [themeReelKey, setThemeReelKey] = useState(0);
   const [themeSpinning, setThemeSpinning] = useState(false);
@@ -3073,16 +3055,6 @@ export default function SpeechBrigade() {
     setInfoModal(null);
   };
 
-  const setAllocatedTime = (index: number) => {
-    const picked = allocationOptions[index];
-    setAllocationIndex(index);
-    setRound((current) => ({
-      ...current,
-      prepSecondsAllocated: picked.prep,
-      deliverySecondsAllocated: picked.delivery,
-    }));
-  };
-
   const goHome = () => {
     setScreen("landing");
     setRound(initialRound);
@@ -3103,7 +3075,6 @@ export default function SpeechBrigade() {
 
   const resetModeRound = (mode: EventMode) => {
     setRound({ ...initialRound, mode });
-    setAllocationIndex(2);
     setSetupStage("spin");
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
@@ -3702,7 +3673,7 @@ export default function SpeechBrigade() {
 
   const startPlanning = () => {
     setRoundTimerStarted(false);
-    setScreen(round.mode === "impromptu" && round.prepSecondsAllocated === 0 ? "recordSpeech" : "planSpeech");
+    setScreen("planSpeech");
   };
 
   // Running out of prep time stays on the page; "I'm ready to speak" moves on.
@@ -4173,6 +4144,39 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="reading event-setup speech-workspace prepared-setup">
+            <div className="setup-corner">
+              {practicePrivacyOptions}
+              <input
+                ref={scriptInputRef}
+                className="visually-hidden"
+                type="file"
+                accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                onChange={handleScriptFileChange}
+              />
+              <button
+                className="corner-upload"
+                type="button"
+                disabled={preparedStage !== "setup"}
+                title="PDF, DOCX, TXT, MD, and RTF files are supported."
+                onClick={() => scriptInputRef.current?.click()}
+              >
+                <span className="document-icon" aria-hidden="true" />
+                Upload script (optional)
+              </button>
+              {scriptUploadStatus ? <p className="script-status compact">{scriptUploadStatus}</p> : null}
+              {preparedScript ? (
+                <div className={`script-context-card compact ${preparedScript.status}`} title={preparedScript.message}>
+                  <strong>{preparedScript.fileName}</strong>
+                  <p>
+                    {preparedScript.status === "ready"
+                      ? "Used as performance context"
+                      : preparedScript.status === "empty"
+                        ? "No readable text found"
+                        : "Couldn't read this file"}
+                  </p>
+                </div>
+              ) : null}
+            </div>
             <h1>{selectedPreparedEvent.name}</h1>
             <div className="setup-step delivery-layout">
               {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
@@ -4202,48 +4206,7 @@ export default function SpeechBrigade() {
               />
               {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? <RecordingPrivacyFooter /> : null}
             </div>
-            {practicePrivacyOptions}
-            <details className="how-it-works">
-              <summary>Rules</summary>
-              <InstructionBlock>
-                {selectedPreparedEvent.introParagraphs.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
-                <p>{selectedPreparedEvent.objectiveParagraph}</p>
-                <p>{selectedPreparedEvent.expectationsParagraph}</p>
-                <p>
-                  <strong>Time limit: 10 minutes.</strong> Official tournament requirements may vary by event,
-                  tournament, and season.
-                </p>
-                <p>{selectedPreparedEvent.futureWorkflowParagraph}</p>
-              </InstructionBlock>
-            </details>
-            <input
-              ref={scriptInputRef}
-              className="visually-hidden"
-              type="file"
-              accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-              onChange={handleScriptFileChange}
-            />
-            <div className="workspace-actions single">
-              <button
-                className="workspace-card"
-                type="button"
-                disabled={preparedStage !== "setup"}
-                onClick={() => scriptInputRef.current?.click()}
-              >
-                <span className="document-icon" aria-hidden="true" />
-                <strong>Upload Script (Optional)</strong>
-                <small>PDF, DOCX, TXT, MD, and RTF files are supported.</small>
-              </button>
-            </div>
-            {scriptUploadStatus ? <p className="script-status">{scriptUploadStatus}</p> : null}
-            {preparedScript ? (
-              <div className={`script-context-card ${preparedScript.status}`}>
-                <strong>{preparedScript.fileName}</strong>
-                <p>{preparedScript.message}</p>
-              </div>
-            ) : null}
+            <RulesLink label="Rules" onOpen={() => openRules(selectedPreparedEvent.id)} />
             <button className="secondary" type="button" onClick={goBack}>
               Back
             </button>
@@ -4519,47 +4482,9 @@ export default function SpeechBrigade() {
         return (
           <section className="reading event-setup">
             <h1>Impromptu Speaking</h1>
-            {practicePrivacyOptions}
-            <details className="how-it-works">
-              <summary>How it works</summary>
-              <InstructionBlock>
-                <p>Split <strong>7 minutes</strong> between prep and delivery.</p>
-                <p>Spin for a <strong>theme</strong>, then get three related topics.</p>
-                <p><strong>Choose</strong> a topic, then press <strong>Start planning</strong>.</p>
-                <p>On each page, press <strong>Start</strong> to begin the timer. Press <strong>I&apos;m ready to speak</strong> when you finish prepping.</p>
-              </InstructionBlock>
-            </details>
-            <div className="setup-step allocation">
-              <p className="eyebrow">Divide your seven minutes</p>
-              <div className="allocation-display">
-                <div>
-                  <span>Prep</span>
-                  <strong>{formatTime(round.prepSecondsAllocated)}</strong>
-                </div>
-                <div className="balance-line" aria-hidden="true" />
-                <div>
-                  <span>Delivery</span>
-                  <strong>{formatTime(round.deliverySecondsAllocated)}</strong>
-                </div>
-              </div>
-              <input
-                aria-label="Preparation time"
-                className="time-slider"
-                type="range"
-                min="0"
-                max="4"
-                step="1"
-                value={allocationIndex}
-                disabled={themeSpinning || Boolean(lockedChoice)}
-                onChange={(event) => setAllocatedTime(Number(event.target.value))}
-              />
-              <div className="slider-labels" aria-hidden="true">
-                <span>0:00</span>
-                <span>1:00</span>
-                <span>2:00</span>
-                <span>3:00</span>
-                <span>4:00</span>
-              </div>
+            <div className="setup-corner">
+              {practicePrivacyOptions}
+              <RulesLink label="How it works" onOpen={() => openRules("impromptu")} />
             </div>
             <div className="setup-step spin-screen">
               <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
@@ -4584,7 +4509,7 @@ export default function SpeechBrigade() {
                   onSpinStart={() => audio.unlock()}
                   onLand={(topics) => setRound((current) => ({ ...current, topicOptions: topics }))}
                   canSpin={round.topicOptions.length === 0}
-                  useLabel={round.prepSecondsAllocated === 0 ? "Start speaking" : "Start planning"}
+                  useLabel="Start planning"
                   onUse={startPlanning}
                   canUse={Boolean(round.selectedTopic)}
                   selectedValue={lockedChoice}
@@ -4680,15 +4605,10 @@ export default function SpeechBrigade() {
         return (
           <section className="reading event-setup">
             <h1>Extemporaneous Speaking</h1>
-            {practicePrivacyOptions}
-            <details className="how-it-works">
-              <summary>How it works</summary>
-              <InstructionBlock>
-                <p>Answer a current-events question with a clear, organized, evidence-based speech.</p>
-                <p>Draw <strong>three questions</strong>, choose one, then press <strong>Start planning</strong>.</p>
-                <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong>. Each timer begins when you press <strong>Start</strong>.</p>
-              </InstructionBlock>
-            </details>
+            <div className="setup-corner">
+              {practicePrivacyOptions}
+              <RulesLink label="How it works" onOpen={() => openRules("extemp")} />
+            </div>
             <div className="setup-step spin-screen">
               <p className="eyebrow step-heading"><strong>Spin</strong> for a list of questions, and <strong>choose</strong> which to speak on</p>
               <TopicSpinnerGroup
