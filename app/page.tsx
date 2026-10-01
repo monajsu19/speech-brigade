@@ -4272,26 +4272,38 @@ export default function SpeechBrigade() {
           <section className="narrow">
             <p className="eyebrow">National Speech & Debate Association</p>
             <h1>Choose Your Event</h1>
-            <div className="event-board">
-              <h2 className="event-group-title">Limited Prep</h2>
-              <h2 className="event-group-title">Prepared Speaking</h2>
-              <button className="event-card compact" type="button" onClick={() => startMode("impromptu")}>
-                <EventCardTitle name="Impromptu Speaking" />
-              </button>
-              <button className="event-card compact" type="button" onClick={() => startMode("extemp")}>
-                <EventCardTitle name="Extemporaneous Speaking" />
-              </button>
-              {PREPARED_EVENT_IDS.map((eventId) => (
-                <button className="event-card compact" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
-                  <EventCardTitle name={PREPARED_EVENT_CONFIGS[eventId].name} />
-                </button>
-              ))}
-              <h2 className="event-group-title wide">Interpretation</h2>
-              {INTERPRETATION_EVENT_IDS.map((eventId) => (
-                <button className="event-card compact" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
-                  <EventCardTitle name={PREPARED_EVENT_CONFIGS[eventId].name} />
-                </button>
-              ))}
+            <div className="event-board grouped">
+              <div className="event-group">
+                <h2 className="event-group-title">Limited Prep</h2>
+                <div className="event-group-cards">
+                  <button className="event-card compact" type="button" onClick={() => startMode("impromptu")}>
+                    <EventCardTitle name="Impromptu Speaking" />
+                  </button>
+                  <button className="event-card compact" type="button" onClick={() => startMode("extemp")}>
+                    <EventCardTitle name="Extemporaneous Speaking" />
+                  </button>
+                </div>
+              </div>
+              <div className="event-group">
+                <h2 className="event-group-title">Prepared Speaking</h2>
+                <div className="event-group-cards">
+                  {PREPARED_EVENT_IDS.map((eventId) => (
+                    <button className="event-card compact" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
+                      <EventCardTitle name={PREPARED_EVENT_CONFIGS[eventId].name} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="event-group wide">
+                <h2 className="event-group-title">Interpretation</h2>
+                <div className="event-group-cards">
+                  {INTERPRETATION_EVENT_IDS.map((eventId) => (
+                    <button className="event-card compact" type="button" key={eventId} onClick={() => startPreparedEvent(eventId)}>
+                      <EventCardTitle name={PREPARED_EVENT_CONFIGS[eventId].name} />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
         );

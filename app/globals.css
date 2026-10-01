@@ -591,8 +591,34 @@ h1 {
   margin: clamp(2rem, 4vw, 3rem) auto 0;
 }
 
+.event-board.grouped {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Each group keeps its heading directly above its own cards, at any width. */
+.event-group {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.event-group.wide {
+  grid-column: 1 / -1;
+  margin-top: 0.8rem;
+}
+
+.event-group-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.event-group.wide .event-group-cards {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .event-group-title {
-  grid-column: span 2;
+  grid-column: 1 / -1;
   margin: 0.6rem 0 0;
   color: var(--muted);
   font-family: var(--sans);
@@ -604,7 +630,6 @@ h1 {
 }
 
 .event-group-title.wide {
-  grid-column: 1 / -1;
   margin-top: 1.4rem;
 }
 
@@ -630,6 +655,42 @@ h1 {
 @media (max-width: 720px) {
   .event-board {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  .event-board.grouped {
+    grid-template-columns: 1fr;
+    gap: 0.9rem;
+  }
+
+  .event-group-title.wide {
+    margin-top: 0.8rem;
+  }
+
+  .event-group,
+  .event-group-cards {
+    gap: 0.6rem;
+  }
+
+  .event-group.wide {
+    margin-top: 0;
+  }
+
+  .event-group.wide .event-group-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Tighter boxes so the titles aren't floating in empty space. */
+  .event-card.compact {
+    min-height: 5.5rem;
+    padding: 0.8rem 0.9rem 1.5rem;
+    border-radius: 18px;
+  }
+
+  .event-card.compact::after {
+    right: 0.7rem;
+    bottom: 0.4rem;
+    font-size: 1rem;
   }
 }
 
@@ -1793,27 +1854,43 @@ h1 {
 
 @media (max-width: 760px) {
   .app-shell {
-    padding: 0.8rem;
+    padding: 0.8rem 1.25rem;
   }
 
+	  /* Logo top left, buttons top right. */
 	  .app-header {
-	    grid-template-columns: 1fr;
+	    grid-template-columns: auto 1fr;
+	    gap: 0.75rem;
 	    font-size: 0.68rem;
-	    justify-items: center;
 	  }
-	
-	  .header-spacer,
+
 	  .mode-label {
 	    display: none;
 	  }
 
+	  /* On phones the inline wordmark becomes a small round badge with the words stacked. */
 	  .wordmark {
-	    justify-self: center;
+	    display: grid;
+	    place-items: center;
+	    align-content: center;
+	    justify-self: start;
+	    width: 3.7rem;
+	    height: 3.7rem;
+	    margin: 0.3rem;
+	    padding: 0;
+	    border: 1px solid var(--ink);
+	    border-radius: 50%;
+	    background: var(--paper);
+	    box-shadow: 0 0 0 0.3rem rgba(251, 247, 238, 0.85);
+	    color: var(--ink);
+	    font-size: 0.82rem;
+	    line-height: 1.05;
 	  }
 
 	  .header-actions {
-	    justify-content: center;
-	    justify-self: center;
+	    gap: 0.4rem;
+	    justify-content: flex-end;
+	    justify-self: end;
 	  }
 
   .screen-frame {
@@ -1821,25 +1898,40 @@ h1 {
     padding-block: 1rem;
   }
 
+  /* Rows of three or fewer boxes stay side by side; the type shrinks to fit. */
   .hero-actions,
-.event-grid,
-.choice-grid,
-.workspace-actions,
-.button-row {
-    grid-template-columns: 1fr;
+  .event-grid,
+  .button-row {
+    gap: 0.7rem;
   }
 
   .primary-card,
   .ghost-card,
   .event-card {
-    min-height: 9rem;
-    padding: 1.15rem 1.25rem 2.75rem;
+    min-height: 7rem;
+    padding: 1rem 0.9rem 2rem;
+    border-radius: 18px;
+  }
+
+  /* The two homepage boxes get more room than the event lists. */
+  .hero-actions .primary-card,
+  .hero-actions .ghost-card {
+    min-height: 10rem;
+    padding: 1.6rem 1.2rem 2.6rem;
+  }
+
+  .primary-card::after,
+  .event-card::after {
+    right: 0.75rem;
+    bottom: 0.45rem;
+    font-size: 1.1rem;
   }
 
   .primary-card span,
   .ghost-card span,
   .event-card span {
-    font-size: clamp(1.35rem, 8vw, 2rem);
+    font-size: clamp(1.05rem, 4.8vw, 1.45rem);
+    overflow-wrap: normal;
   }
 
   .instruction-copy {
