@@ -13,6 +13,9 @@ const SPIN_ICON = (
   </svg>
 );
 
+// Phones get shorter reels so a draw fits on screen with its heading and buttons.
+const isPhoneWidth = () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+
 // Card outline, reel accent, and spin button color for sides that need telling apart.
 const TONE_ACCENTS = { blue: "#1f4f8f", green: "#135248" } as const;
 type SpinnerTone = keyof typeof TONE_ACCENTS;
@@ -86,9 +89,9 @@ export function TopicSpinner({
     const spinner = new Spinner({
       container: containerRef.current,
       items: itemsRef.current,
-      itemHeight: 110,
-      windowHeight: 330,
-      fontSize: "0.95rem",
+      itemHeight: isPhoneWidth() ? 72 : 110,
+      windowHeight: isPhoneWidth() ? 216 : 330,
+      fontSize: isPhoneWidth() ? "0.85rem" : "0.95rem",
       color: "#000000",
       accent: "#135248",
       onLand: (item) => onLandRef.current(item),
@@ -194,9 +197,9 @@ export function TopicSpinnerGroup({
         new Spinner({
           container,
           items: itemsRef.current,
-          itemHeight: 84,
-          windowHeight: 210,
-          fontSize: "0.9rem",
+          itemHeight: isPhoneWidth() ? 60 : 84,
+          windowHeight: isPhoneWidth() ? 150 : 210,
+          fontSize: isPhoneWidth() ? "0.82rem" : "0.9rem",
           color: "#000000",
           accent: TONE_ACCENTS[setupRef.current.tones?.[index] ?? "green"],
           // One tick track is enough; the last reel spins longest, so its ticks cover the draw.
