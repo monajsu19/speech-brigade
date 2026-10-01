@@ -3735,6 +3735,96 @@ h1 {
   text-transform: uppercase;
 }
 
+/* Opposing sides (Weighing Drill): each card carries its own color and Spin button, set further apart. */
+.topic-spinner-group.row:has(.card-spin) {
+  gap: 36px;
+}
+
+/* Sides with their own headings sit wide apart, split by a dashed line down the middle. */
+.topic-spinner-group.row.split {
+  position: relative;
+  width: min(1040px, 100%);
+  column-gap: 120px;
+}
+
+.topic-spinner-group.row.split::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 2px dashed rgba(156, 146, 132, 0.6);
+  pointer-events: none;
+}
+
+.topic-spinner-group.split + .topic-spinner-actions {
+  margin-top: 36px;
+}
+
+.topic-spinner-side {
+  display: grid;
+  align-content: start;
+  gap: 1.2rem;
+  min-width: 0;
+}
+
+.topic-spinner-side .step-heading {
+  margin: 0;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .topic-spinner-group.row.split {
+    row-gap: 2.4rem;
+  }
+
+  .topic-spinner-group.row.split::before {
+    display: none;
+  }
+}
+
+.topic-spinner-card.compact.tone-blue {
+  border-color: #1f4f8f;
+  box-shadow: 0 2px 12px rgba(31, 79, 143, 0.12);
+}
+
+.topic-spinner-card.compact.tone-green {
+  border-color: #135248;
+  box-shadow: 0 2px 12px rgba(19, 82, 72, 0.12);
+}
+
+.topic-spinner-card.tone-blue .topic-spinner-label {
+  color: #1f4f8f;
+}
+
+.topic-spinner-card.tone-green .topic-spinner-label {
+  color: #135248;
+}
+
+.topic-spinner-card:has(.card-spin) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.topic-spinner-card:has(.card-spin) > div {
+  align-self: stretch;
+}
+
+.topic-spinner-spin.card-spin {
+  margin: 12px 0 8px;
+  padding: 10px 28px;
+}
+
+.tone-blue .topic-spinner-spin.card-spin {
+  background: #1f4f8f;
+  box-shadow: 0 10px 15px -3px rgb(31 79 143 / 0.2), 0 4px 6px -4px rgb(31 79 143 / 0.2);
+}
+
+.tone-blue .topic-spinner-spin.card-spin:hover:not(:disabled) {
+  background: #2a64b0;
+}
+
 .topic-spinner-group + .topic-spinner-actions {
   margin-bottom: 1.4rem;
 }
@@ -3803,6 +3893,64 @@ h1 {
 .timer-control.stop.live,
 .timer-control.stop.live .record-dot {
   animation: pulse 1s ease-in-out infinite;
+}
+
+/* Once a choosing draw lands, each card drops its reel neighbors and pops to show only the
+   landed prompt, under a line asking which one to speak on. */
+.topic-spinner-pick {
+  width: min(768px, 100%);
+  margin: 2rem auto -1rem;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+  animation: spinnerPickIn 320ms ease-out both;
+}
+
+.topic-spinner-card.compact.collapsed,
+.topic-spinner-group.row .topic-spinner-card.compact.collapsed {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  /* Even top and bottom so the topic sits in the middle; beats the row layout's reel padding. */
+  padding: 26px 16px;
+  animation: spinnerCardPop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.topic-spinner-card.collapsed > div:not(.topic-spinner-label) {
+  display: none;
+}
+
+.topic-spinner-result {
+  color: #000;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+}
+
+@keyframes spinnerCardPop {
+  0% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes spinnerPickIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 }
 

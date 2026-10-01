@@ -2932,10 +2932,11 @@ export default function SpeechBrigade() {
     };
   }, [screen, session]);
 
+  // Impromptu's topic draw appears below the theme spinner, so bring it into view.
   useEffect(() => {
-    if (setupStage === "spin" && preparedStage === "setup") return;
+    if (setupStage === "spin") return;
     latestSetupStepRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [setupStage, preparedStage]);
+  }, [setupStage]);
 
   useEffect(() => {
     if (!foundersOpen) return undefined;
@@ -3920,12 +3921,17 @@ export default function SpeechBrigade() {
             case "weighing":
               return (
                 <>
-                  <p className="eyebrow step-heading"><strong>Spin</strong> for two scenarios</p>
                   <TopicSpinnerGroup
                     count={2}
                     items={weighingScenarios}
                     layout="row"
+                    headings={[
+                      <><strong>Spin</strong> for Speaker 1&apos;s topic</>,
+                      <><strong>Spin</strong> for Speaker 2&apos;s topic</>,
+                    ]}
                     labels={["Speaker 1: this is worse", "Speaker 2: this is worse"]}
+                    tones={["blue", "green"]}
+                    spinEach
                     onSpinStart={startGameReveal}
                     onLand={(scenarios) => {
                       setGameSession({ gameId: "weighing", scenarios, roundIndex: 0 });
@@ -4063,13 +4069,9 @@ export default function SpeechBrigade() {
         return (
           <section className="reading event-setup speech-workspace prepared-setup">
             <h1>{selectedPreparedEvent.name}</h1>
-            <div className="setup-step delivery-layout" ref={preparedStage === "setup" ? undefined : latestSetupStepRef}>
-              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? (
-                recordingError ? (
-                  <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
-                ) : (
-                  <RecordingNotice />
-                )
+            <div className="setup-step delivery-layout">
+              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
+                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
               ) : null}
               <TimerPanel
                 seconds={preparedDurationSeconds}
@@ -4482,6 +4484,7 @@ export default function SpeechBrigade() {
                   canUse={Boolean(round.selectedTopic)}
                   selectedValue={lockedChoice}
                   onSelect={chooseTopic}
+                  pickPrompt="Pick which of these 3 topics to speak on"
                 />
                 {round.topicOptions.length ? (
                   <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
@@ -4598,6 +4601,7 @@ export default function SpeechBrigade() {
                   const question = round.questionOptions.find((item) => item.question === text);
                   if (question) chooseQuestion(question);
                 }}
+                pickPrompt="Pick which of these 3 questions to speak on"
               />
               {round.questionOptions.length ? (
                 <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
