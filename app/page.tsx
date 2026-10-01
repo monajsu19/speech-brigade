@@ -1105,18 +1105,23 @@ function useAudio() {
 function useCountdownTimer({
   seconds,
   active,
+  paused = false,
   onComplete,
   onWarningSecond,
   timerKey,
 }: {
   seconds: number;
   active: boolean;
+  // Holds the countdown where it is; unpausing picks up from the same time.
+  paused?: boolean;
   onComplete: (elapsed: number, completion: CompletionStatus) => void;
   onWarningSecond?: (second: number) => void;
   timerKey: string;
 }) {
   const [remaining, setRemaining] = useState(seconds);
   const startRef = useRef(0);
+  const elapsedBeforeRef = useRef(0);
+  const runningRef = useRef(false);
   const frameRef = useRef<number | null>(null);
   const completedRef = useRef(false);
   const warningRef = useRef<Set<number>>(new Set());
@@ -1129,13 +1134,18 @@ function useCountdownTimer({
   });
 
   useEffect(() => {
-    if (!active) return undefined;
     completedRef.current = false;
     warningRef.current = new Set();
+    elapsedBeforeRef.current = 0;
+  }, [active, seconds, timerKey]);
+
+  useEffect(() => {
+    if (!active || paused || completedRef.current) return undefined;
     startRef.current = performance.now();
+    runningRef.current = true;
 
     const tick = () => {
-      const elapsed = (performance.now() - startRef.current) / 1000;
+      const elapsed = elapsedBeforeRef.current + (performance.now() - startRef.current) / 1000;
       const next = Math.max(0, seconds - elapsed);
       setRemaining(next);
       const rounded = Math.ceil(next);
@@ -1157,8 +1167,10 @@ function useCountdownTimer({
     frameRef.current = requestAnimationFrame(tick);
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      runningRef.current = false;
+      elapsedBeforeRef.current += (performance.now() - startRef.current) / 1000;
     };
-  }, [active, seconds, timerKey]);
+  }, [active, paused, seconds, timerKey]);
 
   const finishNow = () => {
     // Screens that stay put when time runs out still need their button to move on.
@@ -1168,7 +1180,8 @@ function useCountdownTimer({
     }
     completedRef.current = true;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
-    const elapsed = Math.min(seconds, Math.max(0, (performance.now() - startRef.current) / 1000));
+    const running = runningRef.current ? (performance.now() - startRef.current) / 1000 : 0;
+    const elapsed = Math.min(seconds, Math.max(0, elapsedBeforeRef.current + running));
     onCompleteRef.current(elapsed, "manual");
   };
 
@@ -1178,9 +1191,13 @@ function useCountdownTimer({
 // Countdown dial from the Speech Pact app's recording screen (DURATION_DIAL_SPEC.md, section 7):
 // a green arc for the time remaining that starts at 12 o'clock and runs clockwise, a knob at its
 // end, and the remaining time in the center.
-const DIAL_SIZE_FULL = 260;
-const DIAL_RADIUS_FULL = 110;
-const DIAL_SIZE_COMPACT = 200;
+const DIAL_SIZE_FULL = 380;
+const DIAL_RADIUS_FULL = 160;
+const DIAL_SIZE_COMPACT = 280;
+// Type and handle sizes were specced for a 260px dial and scale from there.
+const DIAL_SIZE_BASE = 260;
+// Keeps the dial inside a phone-width screen's side gutters.
+const DIAL_SIDE_GUTTER = 48;
 const DIAL_HEIGHT_COMPACT = 667;
 const DIAL_HEIGHT_FULL = 780;
 
@@ -1198,14 +1215,18 @@ function pointOnCircle(angleDeg: number, center: number, radius: number) {
 // The dial shrinks from 260 to 200 as the window gets shorter than 780px, down to 667px.
 function useDialGeometry() {
   const [windowHeight, setWindowHeight] = useState(() => (typeof window === "undefined" ? DIAL_HEIGHT_FULL : window.innerHeight));
+  const [windowWidth, setWindowWidth] = useState(() => (typeof window === "undefined" ? DIAL_SIZE_FULL * 2 : window.innerWidth));
   useEffect(() => {
-    const onResize = () => setWindowHeight(window.innerHeight);
+    const onResize = () => {
+      setWindowHeight(window.innerHeight);
+      setWindowWidth(window.innerWidth);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const t = Math.min(1, Math.max(0, (windowHeight - DIAL_HEIGHT_COMPACT) / (DIAL_HEIGHT_FULL - DIAL_HEIGHT_COMPACT)));
-  const size = Math.round(DIAL_SIZE_COMPACT + (DIAL_SIZE_FULL - DIAL_SIZE_COMPACT) * t);
-  const scale = size / DIAL_SIZE_FULL;
+  const size = Math.min(windowWidth - DIAL_SIDE_GUTTER, Math.round(DIAL_SIZE_COMPACT + (DIAL_SIZE_FULL - DIAL_SIZE_COMPACT) * t));
+  const scale = size / DIAL_SIZE_BASE;
   const radius = size * (DIAL_RADIUS_FULL / DIAL_SIZE_FULL);
   return {
     size,
@@ -1225,6 +1246,8 @@ function useDialGeometry() {
 const DIAL_MIN_SECONDS = 15;
 const PREPARED_DURATION_PRESETS = [600, 420, 300];
 const EXTEMP_DURATION_PRESETS = [420, 300];
+// Impromptu's plan and speak timers each drag up to 7 minutes (defaults: 2 to plan, 5 to speak).
+const IMPROMPTU_MAX_SECONDS = 420;
 const DIAL_STEP_SECONDS = 5;
 
 function CountdownDial({
@@ -1322,6 +1345,11 @@ function TimerPanel({
   onStart,
   presets,
   onSecondsChange,
+  maxSeconds,
+  pausable = false,
+  recording = false,
+  onPauseChange,
+  onStop,
 }: {
   seconds: number;
   buttonLabel?: string;
@@ -1336,10 +1364,23 @@ function TimerPanel({
   // Before Start: preset tabs under the dial, and dragging the dial sets any other length.
   presets?: number[];
   onSecondsChange?: (seconds: number) => void;
+  // Longest length the dial can be dragged to; defaults to the longest preset.
+  maxSeconds?: number;
+  // Pause/Resume and Stop buttons, greyed out until Start. Stop hands control back to the page (onStop),
+  // which resets to before Start so the speech can be redone. The Stop dot pulses while recording.
+  pausable?: boolean;
+  recording?: boolean;
+  onPauseChange?: (paused: boolean) => void;
+  onStop?: () => void;
 }) {
+  // Pause belongs to one run of the timer: a new key or a restart clears it.
+  const runKey = `${timerKey}|${active}`;
+  const [pausedRun, setPausedRun] = useState("");
+  const paused = pausedRun === runKey;
   const { remaining, finishNow } = useCountdownTimer({
     seconds,
     active,
+    paused,
     onComplete,
     onWarningSecond,
     timerKey,
@@ -1354,12 +1395,6 @@ function TimerPanel({
         </div>
       ) : null}
       <div className="timer-card">
-        <CountdownDial
-          remaining={active ? remaining : seconds}
-          total={seconds}
-          scaleMax={presets?.length ? Math.max(seconds, ...presets) : seconds}
-          onDrag={!active ? onSecondsChange : undefined}
-        />
         {!active && presets?.length && onSecondsChange ? (
           <div className="duration-presets" role="group" aria-label="Speech length">
             {presets.map((preset) => (
@@ -1373,6 +1408,43 @@ function TimerPanel({
                 {preset / 60} min
               </button>
             ))}
+          </div>
+        ) : null}
+        <CountdownDial
+          remaining={active ? remaining : seconds}
+          total={seconds}
+          scaleMax={maxSeconds ?? (presets?.length ? Math.max(seconds, ...presets) : seconds)}
+          onDrag={!active ? onSecondsChange : undefined}
+        />
+        {pausable && (!active || remaining > 0) ? (
+          <div className="timer-controls">
+            <button
+              className="timer-control"
+              type="button"
+              disabled={!active}
+              onClick={() => {
+                setPausedRun(paused ? "" : runKey);
+                onPauseChange?.(!paused);
+              }}
+            >
+              {paused ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" /></svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1" /><rect x="14" y="4.5" width="4" height="15" rx="1" /></svg>
+              )}
+              {paused ? "Resume" : "Pause"}
+            </button>
+            {onStop ? (
+              <button
+                className={`timer-control stop ${active && recording && !paused ? "live" : ""}`}
+                type="button"
+                disabled={!active}
+                onClick={onStop}
+              >
+                <span className="record-dot" aria-hidden="true" />
+                Stop
+              </button>
+            ) : null}
           </div>
         ) : null}
         {!active && onStart ? (
@@ -3247,6 +3319,28 @@ export default function SpeechBrigade() {
 	    });
 	  };
 
+  // Pause on the timer holds the recorder too.
+  const pauseRecording = (paused: boolean) => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    if (paused && recorder.state === "recording") recorder.pause();
+    else if (!paused && recorder.state === "paused") recorder.resume();
+  };
+  const isRecordingAudio = (speechAnalysisEnabled || saveRecordingEnabled) && !recordingError;
+
+  // Stop throws the take away and releases the microphone; Start records a fresh one.
+  const discardRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder) {
+      recorder.onstop = null;
+      if (recorder.state !== "inactive") recorder.stop();
+    }
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaRecorderRef.current = null;
+    mediaStreamRef.current = null;
+    audioChunksRef.current = [];
+  };
+
   const stopRecording = (): Promise<Blob | null> => {
     return new Promise((resolve) => {
       const recorder = mediaRecorderRef.current;
@@ -3981,6 +4075,13 @@ export default function SpeechBrigade() {
                 seconds={preparedDurationSeconds}
                 presets={PREPARED_DURATION_PRESETS}
                 onSecondsChange={setPreparedDurationSeconds}
+                pausable
+                recording={isRecordingAudio}
+                onPauseChange={pauseRecording}
+                onStop={() => {
+                  discardRecording();
+                  setPreparedStage("setup");
+                }}
                 buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
                 timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
                 active={preparedStage === "performance"}
@@ -4395,6 +4496,12 @@ export default function SpeechBrigade() {
             <h1>Plan your speech</h1>
             <TimerPanel
               seconds={round.mode === "extemp" ? 1800 : round.prepSecondsAllocated}
+              maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
+              onSecondsChange={
+                round.mode === "impromptu"
+                  ? (seconds) => setRound((current) => ({ ...current, prepSecondsAllocated: seconds }))
+                  : undefined
+              }
               buttonLabel="I'm ready to speak"
               topic={selectedPrompt}
               timerKey={`${round.mode}-prep-${selectedPrompt}`}
@@ -4412,21 +4519,21 @@ export default function SpeechBrigade() {
         return (
           <section className="delivery-layout round-timer-page">
             <h1>Record your speech</h1>
-            {roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) ? (
-              recordingError ? (
-                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
-              ) : (
-                <RecordingNotice />
-              )
+            {roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
+              <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
             ) : null}
             <TimerPanel
               seconds={round.deliverySecondsAllocated}
               presets={round.mode === "extemp" ? EXTEMP_DURATION_PRESETS : undefined}
-              onSecondsChange={
-                round.mode === "extemp"
-                  ? (seconds) => setRound((current) => ({ ...current, deliverySecondsAllocated: seconds }))
-                  : undefined
-              }
+              maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
+              onSecondsChange={(seconds) => setRound((current) => ({ ...current, deliverySecondsAllocated: seconds }))}
+              pausable
+              recording={isRecordingAudio}
+              onPauseChange={pauseRecording}
+              onStop={() => {
+                discardRecording();
+                setRoundTimerStarted(false);
+              }}
               buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
               topic={selectedPrompt}
               timerKey={`${round.mode}-delivery-${selectedPrompt}`}

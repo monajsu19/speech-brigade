@@ -3754,3 +3754,67 @@ h1 {
     grid-column-start: auto;
   }
 }
+
+/* Pause/Stop under a running speech timer. Stop (redo from before Start) wears the old
+   "Recording audio" pill's red, and pulses the same way while audio is being recorded. */
+.timer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.timer-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.55rem 1.2rem;
+  border: 1px solid rgba(19, 82, 72, 0.3);
+  border-radius: 999px;
+  background: var(--paper);
+  color: #135248;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.timer-control:hover {
+  background: rgba(19, 82, 72, 0.08);
+}
+
+.timer-control.stop {
+  border-color: rgba(198, 65, 50, 0.4);
+  background: rgba(198, 65, 50, 0.14);
+  color: var(--ink);
+}
+
+.timer-control.stop:hover {
+  background: rgba(198, 65, 50, 0.22);
+}
+
+.timer-control.stop .record-dot {
+  animation: none;
+}
+
+.timer-control.stop.live,
+.timer-control.stop.live .record-dot {
+  animation: pulse 1s ease-in-out infinite;
+}
+}
+
+.timer-control:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.timer-control:disabled:hover {
+  background: var(--paper);
+}
+
+.timer-control.stop:disabled:hover {
+  background: rgba(198, 65, 50, 0.14);
+}
