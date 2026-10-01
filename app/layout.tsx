@@ -62,8 +62,9 @@ export const metadata: Metadata = {
     description: siteDescription,
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/speech-brigade-logo.png",
   },
 };
 
