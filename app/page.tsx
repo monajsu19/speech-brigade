@@ -31,7 +31,9 @@ type Screen =
   | "analyzing"
   | "extempIntro"
   | "results"
-  | "vaultAnalysis";
+  | "vaultAnalysis"
+  | "rules"
+  | "rulesDetail";
 
 // Matches the impromptu-recordings bucket's file_size_limit (15 MB), which is stricter than
 // the transcribe function's own 20 MB cap, so oversized recordings are caught before uploading.
@@ -202,7 +204,6 @@ interface SpeakingGameConfig {
   // Team drills are grouped separately from the solo games.
   team: boolean;
   howItWorks: React.ReactNode[];
-  tip: string;
   // Each round is one timed speech; most games have a single round.
   rounds: { label: string; seconds: number }[];
 }
@@ -409,7 +410,6 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
       <>Answer it in <strong>90 seconds</strong>: a clear answer, a reason or example, and a strong finish.</>,
       <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    tip: "A strong short response clearly answers the question, develops an idea, and finishes with purpose.",
     rounds: [{ label: "Response", seconds: 90 }],
   },
   wordFusion: {
@@ -421,7 +421,6 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
       <>Connect all three in one <strong>60-second</strong> speech: a story, an argument, or an analogy.</>,
       <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    tip: "The strongest connections create one unified idea rather than three unrelated observations.",
     rounds: [{ label: "Speech", seconds: 60 }],
   },
   storyRelay: {
@@ -433,7 +432,6 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
       <><strong>Plot twists</strong> appear as you speak. Work each one into the story.</>,
       <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    tip: "Strong improvisational storytelling connects new developments to the existing narrative rather than abandoning the story each time something changes.",
     rounds: [{ label: "Story", seconds: 180 }],
   },
   landPlane: {
@@ -445,7 +443,6 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
       <>Deliver its conclusion in <strong>20 seconds</strong> without adding a new argument.</>,
       <>The timer begins when you press <strong>Start</strong>.</>,
     ],
-    tip: "A strong conclusion reinforces the central message, connects the main ideas, and leaves the audience with a memorable final thought.",
     rounds: [{ label: "Conclusion", seconds: 20 }],
   },
   threeTwoOne: {
@@ -457,7 +454,6 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
       <>Deliver it in <strong>3 minutes</strong>, then <strong>2</strong>, then <strong>1</strong>, keeping the same relevant details.</>,
       <>Each round begins when you press <strong>Start</strong>.</>,
     ],
-    tip: "As the time shrinks, keep the claim, the warrant, and the impact. Cut the filler, not the substance.",
     rounds: [
       { label: "3 minutes", seconds: 180 },
       { label: "2 minutes", seconds: 120 },
@@ -473,7 +469,6 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
       <>Speaker 1 argues the first is worse, and Speaker 2 argues the second is worse, for <strong>1 minute</strong> each.</>,
       <>Each speaker&apos;s timer begins when you press <strong>Start</strong>.</>,
     ],
-    tip: "Strong weighing compares directly. Don't just explain why your scenario is bad; explain why it is worse than theirs.",
     rounds: [
       { label: "Speaker 1", seconds: 60 },
       { label: "Speaker 2", seconds: 60 },
@@ -1701,6 +1696,82 @@ function InstructionBlock({ children }: { children: React.ReactNode }) {
   return <div className="instruction-copy">{children}</div>;
 }
 
+// Rules copy is shared by each event's setup page and the Rules page.
+function ImpromptuRules() {
+  return (
+    <>
+      <p>Plan for up to <strong>7 minutes</strong> and speak for up to <strong>7 minutes</strong>. Drag either timer to set its length before you press Start.</p>
+      <p>Spin for a <strong>theme</strong>, then get three related topics.</p>
+      <p><strong>Choose</strong> a topic, then press <strong>Start planning</strong>.</p>
+      <p>On each page, press <strong>Start</strong> to begin the timer. Press <strong>I&apos;m ready to speak</strong> when you finish prepping.</p>
+    </>
+  );
+}
+
+function ExtempRules() {
+  return (
+    <>
+      <p>Answer a current-events question with a clear, organized, evidence-based speech.</p>
+      <p>Draw <strong>three questions</strong>, choose one, then press <strong>Start planning</strong>.</p>
+      <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong>. Each timer begins when you press <strong>Start</strong>.</p>
+    </>
+  );
+}
+
+function PreparedEventRules({ event }: { event: PreparedEventConfig }) {
+  return (
+    <>
+      {event.introParagraphs.map((paragraph) => (
+        <p key={paragraph}>{paragraph}</p>
+      ))}
+      <p>{event.objectiveParagraph}</p>
+      <p>{event.expectationsParagraph}</p>
+      <p>
+        <strong>Time limit: 10 minutes.</strong> Official tournament requirements may vary by event,
+        tournament, and season.
+      </p>
+      <p>{event.futureWorkflowParagraph}</p>
+    </>
+  );
+}
+
+type RulesTopicId = "impromptu" | "extemp" | PreparedEventId | SpeakingGameId;
+
+function isGameTopic(topicId: RulesTopicId): topicId is SpeakingGameId {
+  return topicId in SPEAKING_GAME_CONFIGS;
+}
+
+function rulesTopicName(topicId: RulesTopicId) {
+  if (topicId === "impromptu") return "Impromptu Speaking";
+  if (topicId === "extemp") return "Extemporaneous Speaking";
+  if (isGameTopic(topicId)) return SPEAKING_GAME_CONFIGS[topicId].name;
+  return PREPARED_EVENT_CONFIGS[topicId].name;
+}
+
+function RulesContent({ topicId }: { topicId: RulesTopicId }) {
+  if (topicId === "impromptu") return <ImpromptuRules />;
+  if (topicId === "extemp") return <ExtempRules />;
+  if (isGameTopic(topicId)) {
+    return (
+      <>
+        {SPEAKING_GAME_CONFIGS[topicId].howItWorks.map((line, index) => (
+          <p key={`${topicId}-${index}`}>{line}</p>
+        ))}
+      </>
+    );
+  }
+  return <PreparedEventRules event={PREPARED_EVENT_CONFIGS[topicId]} />;
+}
+
+// The underlined link that stands in for a Rules / How it works box on each setup page.
+function RulesLink({ label, onOpen }: { label: string; onOpen: () => void }) {
+  return (
+    <button className="rules-link" type="button" onClick={onOpen}>
+      {label}
+    </button>
+  );
+}
+
 function PracticeOptionToggle({
   title,
   enabled,
@@ -2759,6 +2830,11 @@ export default function SpeechBrigade() {
     setScreenState(next);
   }, []);
 
+  const openRules = (topicId: RulesTopicId) => {
+    setRulesTopic(topicId);
+    setScreen("rulesDetail");
+  };
+
   const goBack = useCallback(() => {
     if (window.history.state?.key === historyKeyRef.current && screenRef.current !== "landing") {
       window.history.back();
@@ -2781,6 +2857,7 @@ export default function SpeechBrigade() {
   // Prepared/interp events: the countdown and performance timer appear under the script step.
   const [preparedStage, setPreparedStage] = useState<"setup" | "performance">("setup");
   const [preparedDurationSeconds, setPreparedDurationSeconds] = useState(600);
+  const [rulesTopic, setRulesTopic] = useState<RulesTopicId>("impromptu");
 
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
@@ -3948,14 +4025,7 @@ export default function SpeechBrigade() {
         return (
           <section className="reading event-setup">
             <h1>{gameConfig.name}</h1>
-            <details className="how-it-works">
-              <summary>How it works</summary>
-              <InstructionBlock>
-                {gameConfig.howItWorks.map((line, index) => (
-                  <p key={`${gameConfig.id}-${index}`}>{line}</p>
-                ))}
-              </InstructionBlock>
-            </details>
+            <RulesLink label="How it works" onOpen={() => openRules(gameConfig.id)} />
             <div className="setup-step spin-screen">{setupStep}</div>
           </section>
         );
@@ -4017,14 +4087,49 @@ export default function SpeechBrigade() {
                 />
               ))}
             </div>
-            <div className="analysis-error-card future-analysis-card">
-              <span className="eyebrow">Practice tip</span>
-              <p>{gameConfig.tip}</p>
-            </div>
             <div className="button-row">
               <button className="primary" type="button" onClick={retrySpeakingGame}>Practice Again</button>
               <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
             </div>
+          </section>
+        );
+      case "rules": {
+        const rulesGroup = (title: string, topicIds: RulesTopicId[]) => (
+          <div className="account-field rules-group" key={title}>
+            <span>{title}</span>
+            <ul>
+              {topicIds.map((topicId) => (
+                <li key={topicId}>
+                  <RulesLink label={rulesTopicName(topicId)} onOpen={() => openRules(topicId)} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+        return (
+          <section className="narrow">
+            <p className="eyebrow">National Speech & Debate Association</p>
+            <h1>Rules</h1>
+            <div className="account-card rules-card">
+              {rulesGroup("Limited Prep", ["impromptu", "extemp"])}
+              {rulesGroup("Prepared Speaking", PREPARED_EVENT_IDS)}
+              {rulesGroup("Interpretation", INTERPRETATION_EVENT_IDS)}
+              {rulesGroup("Games", SPEAKING_GAME_IDS)}
+            </div>
+          </section>
+        );
+      }
+      case "rulesDetail":
+        return (
+          <section className="reading rules-detail">
+            <p className="eyebrow">Rules</p>
+            <h1>{rulesTopicName(rulesTopic)}</h1>
+            <InstructionBlock>
+              <RulesContent topicId={rulesTopic} />
+            </InstructionBlock>
+            <button className="secondary" type="button" onClick={goBack}>
+              Back
+            </button>
           </section>
         );
       case "events":
@@ -4741,6 +4846,9 @@ export default function SpeechBrigade() {
 		            onClick={() => setScreen("pastSpeeches")}
 	          >
 	            Recent
+	          </button>
+	          <button className="home-button" type="button" onClick={() => setScreen("rules")}>
+	            Rules
 	          </button>
 	          {session ? (
 	            <button

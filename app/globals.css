@@ -892,26 +892,33 @@ h1 {
   color: var(--ink);
 }
 
-.how-it-works {
-  width: min(680px, 100%);
-  margin: clamp(1.4rem, 3vw, 2rem) auto 0;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(255, 252, 244, 0.6);
-  text-align: left;
-}
-
-.how-it-works summary {
-  padding: 0.85rem 1.2rem;
+/* Setup pages link to the event's rules page instead of showing a rules box. */
+.rules-link {
+  display: block;
+  margin: clamp(0.8rem, 2vw, 1.2rem) auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--ink);
-  font-weight: 650;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(201, 164, 91, 0.7);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
   cursor: pointer;
 }
 
-.how-it-works .instruction-copy {
-  columns: 1;
-  margin: 0;
-  padding: 0 1.2rem 0.4rem;
+.rules-link:hover {
+  color: var(--gold);
+  text-decoration-color: var(--gold);
+}
+
+.rules-link:focus-visible {
+  outline: 2px solid rgba(201, 164, 91, 0.7);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .setup-step {
@@ -3952,6 +3959,30 @@ h1 {
     transform: translateY(0);
   }
 }
+
+/* Rules page: one event's rules as plain reading copy. */
+.rules-detail .instruction-copy {
+  width: min(680px, 100%);
+  margin: 2rem auto;
+  columns: 1;
+  text-align: left;
+}
+
+/* Rules page: every event and game as an underlined link inside one card, grouped by category. */
+.rules-card .rules-group ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rules-card .rules-link {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.12rem;
+  font-weight: 500;
+  text-align: left;
 }
 
 .timer-control:disabled {
