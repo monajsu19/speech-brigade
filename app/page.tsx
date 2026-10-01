@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
 import { TopicSpinner, TopicSpinnerGroup } from "./TopicSpinner";
@@ -2747,6 +2747,191 @@ function AnalyzingProgress({ stage, saveOnly }: { stage: AnalyzingStage; saveOnl
   );
 }
 
+interface VaultFilters {
+  mode: AnalysisMode | "all";
+  analyzed: "all" | "analyzed" | "notAnalyzed";
+  minStars: number;
+  withinDays: number;
+}
+
+const DEFAULT_VAULT_FILTERS: VaultFilters = { mode: "all", analyzed: "all", minStars: 0, withinDays: 0 };
+
+const VAULT_MODE_OPTIONS: AnalysisMode[] = [
+  "impromptu",
+  "extemp",
+  ...(Object.keys(PREPARED_EVENT_CONFIGS) as PreparedEventId[]),
+];
+
+// A cream dropdown in place of the native select, whose menu would otherwise open in the
+// operating system's own (dark, small) style.
+function FilterSelect<T extends string | number>({
+  label,
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  // selectedLabel: what the closed button shows when this option is picked, if not its label.
+  options: { value: T; label: string; selectedLabel?: string }[];
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const listId = useId();
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  const openMenu = () => {
+    setActiveIndex(selectedIndex);
+    setOpen(true);
+  };
+
+  const choose = (index: number) => {
+    onChange(options[index].value);
+    setOpen(false);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape" || event.key === "Tab") {
+      setOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) {
+        openMenu();
+        return;
+      }
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) => (current + step + options.length) % options.length);
+      return;
+    }
+    if ((event.key === "Enter" || event.key === " ") && open) {
+      event.preventDefault();
+      choose(activeIndex);
+    }
+  };
+
+  return (
+    <div className={`filter-select ${open ? "open" : ""}`} ref={wrapRef} onKeyDown={handleKeyDown}>
+      <button
+        className="filter-select-button"
+        type="button"
+        role="combobox"
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-activedescendant={open ? `${listId}-${activeIndex}` : undefined}
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+      >
+        <span>{options[selectedIndex]?.selectedLabel ?? options[selectedIndex]?.label}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open ? (
+        <ul className="filter-select-menu" role="listbox" id={listId} aria-label={label}>
+          {options.map((option, index) => (
+            <li
+              key={String(option.value)}
+              id={`${listId}-${index}`}
+              role="option"
+              aria-selected={index === selectedIndex}
+              className={index === activeIndex ? "active" : undefined}
+              onPointerEnter={() => setActiveIndex(index)}
+              onClick={() => choose(index)}
+            >
+              {option.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+const VAULT_ANALYZED_OPTIONS: { value: VaultFilters["analyzed"]; label: string; selectedLabel?: string }[] = [
+  { value: "all", label: "All", selectedLabel: "Analysis? All" },
+  { value: "analyzed", label: "Yes", selectedLabel: "Analysis? Yes" },
+  { value: "notAnalyzed", label: "No", selectedLabel: "Analysis? No" },
+];
+
+const VAULT_STAR_OPTIONS = [
+  { value: 0, label: "Any stars" },
+  ...[1, 2, 3, 4, 5].map((stars) => ({ value: stars, label: stars === 5 ? "5 stars" : `${stars}+ stars` })),
+];
+
+const VAULT_DATE_OPTIONS = [
+  { value: 0, label: "Any time" },
+  { value: 7, label: "Past week" },
+  { value: 30, label: "Past month" },
+  { value: 90, label: "Past 3 months" },
+];
+
+function VaultFilterBar({
+  filters,
+  active,
+  onChange,
+}: {
+  filters: VaultFilters;
+  active: boolean;
+  onChange: (filters: VaultFilters) => void;
+}) {
+  return (
+    <div className="vault-filters" role="group" aria-label="Filter recordings">
+      <FilterSelect<VaultFilters["mode"]>
+        label="Event"
+        value={filters.mode}
+        options={[
+          { value: "all", label: "All events" },
+          ...VAULT_MODE_OPTIONS.map((mode) => ({ value: mode, label: formatAnalysisModeLabel(mode) })),
+        ]}
+        onChange={(mode) => onChange({ ...filters, mode })}
+      />
+      <FilterSelect
+        label="Analysis"
+        value={filters.analyzed}
+        options={VAULT_ANALYZED_OPTIONS}
+        onChange={(analyzed) => {
+          // Unanalyzed recordings have no stars, so a star filter would hide everything.
+          onChange({ ...filters, analyzed, minStars: analyzed === "notAnalyzed" ? 0 : filters.minStars });
+        }}
+      />
+      <FilterSelect
+        label="Stars"
+        value={filters.minStars}
+        options={VAULT_STAR_OPTIONS}
+        disabled={filters.analyzed === "notAnalyzed"}
+        onChange={(minStars) => onChange({ ...filters, minStars })}
+      />
+      <FilterSelect
+        label="Date"
+        value={filters.withinDays}
+        options={VAULT_DATE_OPTIONS}
+        onChange={(withinDays) => onChange({ ...filters, withinDays })}
+      />
+      {active ? (
+        <button className="vault-filters-clear" type="button" onClick={() => onChange(DEFAULT_VAULT_FILTERS)}>
+          Clear filters
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function VaultCard({
   recording,
   onOpen,
@@ -2860,6 +3045,8 @@ export default function SpeechBrigade() {
   const [vaultLoadingMore, setVaultLoadingMore] = useState(false);
   const vaultRequestRef = useRef(0);
   const vaultSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [vaultFilters, setVaultFilters] = useState<VaultFilters>(DEFAULT_VAULT_FILTERS);
+  const vaultFiltersActive = JSON.stringify(vaultFilters) !== JSON.stringify(DEFAULT_VAULT_FILTERS);
   const [foundersOpen, setFoundersOpen] = useState(false);
   const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
   const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
@@ -2920,13 +3107,20 @@ export default function SpeechBrigade() {
   }, [screen, session, setScreen]);
 
   // Page sizes by offset: the first 10, the next 20, then everything else.
-  const fetchVaultPage = async (offset: number) => {
+  const fetchVaultPage = useCallback(async (offset: number) => {
     if (!supabase) return { rows: [] as VaultRecording[], hasMore: false, error: "" };
     const pageSize = offset === 0 ? 10 : offset < 30 ? 30 - offset : null;
     let query = supabase
       .from("recordings")
       .select("id, prompt, mode, duration_seconds, transcript, transcript_data, audio_url, analysis, created_at")
       .order("created_at", { ascending: false });
+    if (vaultFilters.mode !== "all") query = query.eq("mode", vaultFilters.mode);
+    if (vaultFilters.analyzed === "analyzed") query = query.not("analysis", "is", null);
+    if (vaultFilters.analyzed === "notAnalyzed") query = query.is("analysis", null);
+    if (vaultFilters.minStars > 0) query = query.gte("analysis->scorecard->stars", vaultFilters.minStars);
+    if (vaultFilters.withinDays > 0) {
+      query = query.gte("created_at", new Date(Date.now() - vaultFilters.withinDays * 86_400_000).toISOString());
+    }
     // One extra row tells us whether another page exists.
     query = pageSize === null ? query.range(offset, offset + 9999) : query.range(offset, offset + pageSize);
     const { data, error } = await query;
@@ -2934,7 +3128,7 @@ export default function SpeechBrigade() {
     const rows = (data || []) as VaultRecording[];
     if (pageSize === null) return { rows, hasMore: false, error: "" };
     return { rows: rows.slice(0, pageSize), hasMore: rows.length > pageSize, error: "" };
-  };
+  }, [vaultFilters]);
 
   const loadMoreVault = useCallback(() => {
     if (vaultLoadingMore || !vaultHasMore) return;
@@ -2951,7 +3145,7 @@ export default function SpeechBrigade() {
       }
       setVaultLoadingMore(false);
     });
-  }, [vaultLoadingMore, vaultHasMore, vaultRecordings.length]);
+  }, [vaultLoadingMore, vaultHasMore, vaultRecordings.length, fetchVaultPage]);
 
   useEffect(() => {
     const sentinel = vaultSentinelRef.current;
@@ -2989,7 +3183,7 @@ export default function SpeechBrigade() {
       cancelled = true;
       window.clearTimeout(loadingId);
     };
-  }, [screen, session]);
+  }, [screen, session, fetchVaultPage]);
 
   // Impromptu's topic draw appears below the theme spinner, so bring it into view.
   useEffect(() => {
@@ -4451,10 +4645,13 @@ export default function SpeechBrigade() {
               </>
             ) : (
               <div className="vault-section">
+                <VaultFilterBar filters={vaultFilters} active={vaultFiltersActive} onChange={setVaultFilters} />
                 {vaultLoading ? (
                   <p className="vault-status">Loading your recordings…</p>
                 ) : vaultError ? (
                   <p className="vault-status error">{vaultError}</p>
+                ) : vaultRecordings.length === 0 && vaultFiltersActive ? (
+                  <p className="vault-status">No recordings match these filters.</p>
                 ) : vaultRecordings.length === 0 ? (
                   <p className="vault-status">No recordings yet — turn on Save recording before a round to see it here.</p>
                 ) : (

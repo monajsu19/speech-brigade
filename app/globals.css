@@ -2003,7 +2003,7 @@ h1 {
 }
 
 .vault-section {
-  width: min(560px, 100%);
+  width: min(440px, 100%);
   margin: 2.4rem auto 0;
 }
 
@@ -3850,6 +3850,136 @@ h1 {
   .event-card.centered-row-start {
     grid-column-start: auto;
   }
+}
+
+.vault-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 1.2rem;
+}
+
+/* Recent filters: cream pill buttons whose menus match them, instead of native selects. */
+.filter-select {
+  position: relative;
+  min-width: 0;
+}
+
+.filter-select-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.9rem;
+  padding: 0.6rem 1rem 0.6rem 1.15rem;
+  border: 1px solid rgba(201, 164, 91, 0.35);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 0 6px 18px rgba(35, 30, 20, 0.06);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filter-select-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-select-button svg {
+  flex: none;
+  transition: transform 160ms ease;
+}
+
+.filter-select.open .filter-select-button {
+  border-color: var(--gold);
+}
+
+.filter-select.open .filter-select-button svg {
+  transform: rotate(180deg);
+}
+
+.filter-select-button:hover:not(:disabled) {
+  border-color: rgba(201, 164, 91, 0.7);
+}
+
+.filter-select-button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.filter-select-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.filter-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  min-width: 100%;
+  max-height: min(22rem, 60vh);
+  margin: 0;
+  padding: 0.4rem;
+  overflow-y: auto;
+  border: 1px solid rgba(201, 164, 91, 0.4);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: 0 20px 50px rgba(35, 30, 20, 0.16);
+  list-style: none;
+  text-align: left;
+}
+
+.filter-select-menu li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.6rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 12px;
+  color: var(--ink);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.filter-select-menu li::before {
+  width: 0.9rem;
+  color: var(--gold);
+  font-weight: 700;
+  content: "";
+}
+
+.filter-select-menu li[aria-selected="true"] {
+  font-weight: 600;
+}
+
+.filter-select-menu li[aria-selected="true"]::before {
+  content: "✓";
+}
+
+.filter-select-menu li.active {
+  background: rgba(201, 164, 91, 0.16);
+}
+
+.vault-filters .vault-filters-clear {
+  grid-column: 1 / -1;
+  justify-self: center;
+  padding: 0.2rem 0.6rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* Pause/Stop under a running speech timer. Stop (redo from before Start) wears the old
