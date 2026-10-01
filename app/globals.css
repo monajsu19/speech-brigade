@@ -3437,6 +3437,10 @@ h1 {
   padding-top: 0;
 }
 
+.screen-frame:not(.landing-frame) > section.analyzing-screen {
+  margin-top: clamp(6rem, 30vh, 16rem);
+}
+
 .screen-frame:not(.landing-frame) > .delivery-layout {
   align-content: start;
   min-height: 0;
