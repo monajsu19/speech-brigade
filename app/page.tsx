@@ -2063,16 +2063,12 @@ function alignSentenceTimestamps(sentences: SentenceTip[], transcriptData: Trans
 function SectionedTranscript({
   sentences,
   timestamps,
-  pauseCount,
-  wordsPerMinute,
   transcriptText,
   renderSentence,
   renderSectionFooter,
 }: {
   sentences: SentenceTip[];
   timestamps: Map<SentenceTip, string>;
-  pauseCount: number;
-  wordsPerMinute: number;
   transcriptText: string;
   renderSentence: (sentence: SentenceTip, key: string) => React.ReactNode;
   renderSectionFooter?: (section: Section) => React.ReactNode;
@@ -2084,10 +2080,6 @@ function SectionedTranscript({
       <div className="transcript-header">
         <div className="transcript-header-pills">
           <span className="transcript-label">Transcript</span>
-          <span className="transcript-pill">
-            {pauseCount} {pauseCount === 1 ? "Pause" : "Pauses"}
-          </span>
-          <span className="transcript-pill">{wordsPerMinute} WPM</span>
         </div>
         <TranscriptCopyButton text={transcriptText} />
       </div>
@@ -2346,15 +2338,14 @@ function WarningIcon() {
   );
 }
 
-function GrammarSummaryCard({ breakdown, summary }: { breakdown: GrammarBreakdown; summary: string }) {
+function GrammarSummaryCard({ breakdown }: { breakdown: GrammarBreakdown }) {
   const total = breakdown.agreement + breakdown.verbTense + breakdown.sentenceStructure + breakdown.wordUsage;
   return (
-    <div className="grammar-summary-card">
-      <div className={`grammar-summary-banner ${total === 0 ? "clean" : "warn"}`}>
-        <WarningIcon />
-        <span>{total === 0 ? "No grammar issues found" : `${total} grammar issue${total === 1 ? "" : "s"} found`}</span>
+    <div className={`grammar-summary-card ${total === 0 ? "clean" : "warn"}`}>
+      <div className="grammar-summary-banner">
+        {total === 0 ? <CheckIcon /> : <WarningIcon />}
+        <span>{total === 0 ? "No grammar issues" : `${total} grammar issue${total === 1 ? "" : "s"} found`}</span>
       </div>
-      <p className="grammar-summary-text">{summary}</p>
       <ul className="grammar-bucket-list">
         {grammarBucketInfo.map((bucket) => {
           const count = breakdown[bucket.key];
@@ -2591,19 +2582,11 @@ function ScorecardPanel({
             <SectionedTranscript
               sentences={analysis.sentences}
               timestamps={sentenceTimestamps}
-              pauseCount={analysis.pauseCount}
-              wordsPerMinute={analysis.wordsPerMinute}
               transcriptText={transcript}
               renderSentence={(sentence, key) => (
                 <FlaggedSentence sentence={sentence} keyId={key} openKey={openKey} setOpenKey={setOpenKey} />
               )}
             />
-            <div className="takeaway-callout">
-              <span className="eyebrow">
-                <SparkleIcon /> Biggest room for improvement
-              </span>
-              <p>{analysis.keyTakeawayTip}</p>
-            </div>
           </>
         ) : null}
 
@@ -2613,8 +2596,6 @@ function ScorecardPanel({
             <SectionedTranscript
               sentences={analysis.sentences}
               timestamps={sentenceTimestamps}
-              pauseCount={analysis.pauseCount}
-              wordsPerMinute={analysis.wordsPerMinute}
               transcriptText={transcript}
               renderSentence={(sentence, key) => <PlainSentence text={sentence.text} keyId={key} />}
               renderSectionFooter={(section) => {
@@ -2645,7 +2626,6 @@ function ScorecardPanel({
 
         {activeTab === "words" ? (
           <>
-            <p className="tab-summary-text">{analysis.vocabSummary}</p>
             <div className="word-analysis-grid">
               <WordListCard title="Weak Words" words={analysis.weakWords} tone="weak" />
               <WordListCard title="Power Words" words={analysis.powerWords} tone="power" />
@@ -2653,8 +2633,6 @@ function ScorecardPanel({
             <SectionedTranscript
               sentences={analysis.sentences}
               timestamps={sentenceTimestamps}
-              pauseCount={analysis.pauseCount}
-              wordsPerMinute={analysis.wordsPerMinute}
               transcriptText={transcript}
               renderSentence={(sentence, key) => (
                 <div className="sentence-row plain" key={key}>
@@ -2667,12 +2645,10 @@ function ScorecardPanel({
 
         {activeTab === "grammar" ? (
           <>
-            <GrammarSummaryCard breakdown={analysis.grammarBreakdown} summary={analysis.grammarSummary} />
+            <GrammarSummaryCard breakdown={analysis.grammarBreakdown} />
             <SectionedTranscript
               sentences={analysis.sentences}
               timestamps={sentenceTimestamps}
-              pauseCount={analysis.pauseCount}
-              wordsPerMinute={analysis.wordsPerMinute}
               transcriptText={transcript}
               renderSentence={(sentence, key) => (
                 <FlaggedSentence sentence={sentence} keyId={key} openKey={openKey} setOpenKey={setOpenKey} grammarOnly />
@@ -2682,12 +2658,6 @@ function ScorecardPanel({
         ) : null}
       </div>
 
-      {transcript ? (
-        <details className="transcript-disclosure">
-          <summary>Full plain-text transcript</summary>
-          <p>{transcript}</p>
-        </details>
-      ) : null}
     </div>
   );
 }
