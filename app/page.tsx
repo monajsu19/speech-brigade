@@ -58,6 +58,13 @@ const OPEN_EVENT_STORAGE_KEY = "speech-brigade-open-event";
 // Screens outside any event; reaching one forgets the open event.
 const NON_EVENT_SCREENS = new Set<Screen>(["landing", "events", "gamesSelection", "pastSpeeches", "vaultAnalysis", "settings", "rules"]);
 
+// Production runs on the Next.js app router, which reloads the page on Back when a history entry
+// lacks its own markers (__NA and its route tree). This page's first replaceState runs before the
+// router patches history to copy them, so carry over whatever router state the entry already has.
+function withRouterHistoryState(state: { screen: Screen; key: string }) {
+  return { ...(window.history.state ?? {}), ...state };
+}
+
 function readOpenEvent() {
   try {
     return window.sessionStorage.getItem(OPEN_EVENT_STORAGE_KEY) || "";
@@ -3145,7 +3152,7 @@ export default function SpeechBrigade() {
     const current = screenRef.current;
     if (next === current) return;
     screenRef.current = next;
-    const state = { screen: next, key: historyKeyRef.current };
+    const state = withRouterHistoryState({ screen: next, key: historyKeyRef.current });
     if (TRANSIENT_SCREENS.has(current)) window.history.replaceState(state, "");
     else window.history.pushState(state, "");
     setScreenState(next);
@@ -3532,7 +3539,7 @@ export default function SpeechBrigade() {
 
   useEffect(() => {
     historyKeyRef.current = `${Date.now()}-${Math.random()}`;
-    window.history.replaceState({ screen: "landing", key: historyKeyRef.current }, "");
+    window.history.replaceState(withRouterHistoryState({ screen: "landing", key: historyKeyRef.current }), "");
 
     const [eventKind, eventId] = readOpenEvent().split(":");
     const restoreId = window.setTimeout(() => {
