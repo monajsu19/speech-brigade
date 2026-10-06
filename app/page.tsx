@@ -28,6 +28,7 @@ type Screen =
   | "impromptuIntro"
   | "planSpeech"
   | "recordSpeech"
+  | "reviewSpeech"
   | "analyzing"
   | "extempIntro"
   | "results"
@@ -48,8 +49,36 @@ const TRANSIENT_SCREENS = new Set<Screen>([
   "signIn",
   "planSpeech",
   "recordSpeech",
+  "reviewSpeech",
   "analyzing",
 ]);
+
+// Reloading mid-event returns to that event's first page, so the open event is kept per tab.
+const OPEN_EVENT_STORAGE_KEY = "speech-brigade-open-event";
+// Screens outside any event; reaching one forgets the open event.
+const NON_EVENT_SCREENS = new Set<Screen>(["landing", "events", "gamesSelection", "pastSpeeches", "vaultAnalysis", "settings", "rules"]);
+
+function readOpenEvent() {
+  try {
+    return window.sessionStorage.getItem(OPEN_EVENT_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeOpenEvent(value: string) {
+  try {
+    if (value) window.sessionStorage.setItem(OPEN_EVENT_STORAGE_KEY, value);
+    else window.sessionStorage.removeItem(OPEN_EVENT_STORAGE_KEY);
+  } catch {
+    // Without storage, a reload simply starts at the homepage.
+  }
+}
+
+// Uploaded scripts are analyzed as a transcript, up to this many words.
+const SCRIPT_WORD_LIMIT = 2500;
+// Scripts have no recording, so their length in time is estimated at a typical speaking pace.
+const SCRIPT_WORDS_PER_MINUTE = 150;
 
 // Current analyses use organization/analysis/delivery for every event.
 // The legacy Extemp keys remain here so older saved rounds still render.
@@ -183,6 +212,24 @@ interface PreparedScriptContext {
   text: string;
   status: "ready" | "empty" | "error";
   message: string;
+}
+
+// A stopped speech waiting on the review page, where it can be replayed, transcribed, edited,
+// redone, or sent for analysis.
+interface SpeechReview {
+  flow: "round" | "prepared";
+  blob: Blob;
+  audioUrl: string;
+  mode: AnalysisMode;
+  topic: string;
+  elapsedSeconds: number;
+  completion: CompletionStatus;
+  transcript: string;
+  // Word timings only match the transcript as it was heard, before any edits.
+  heardTranscript: string;
+  transcriptData: TranscriptData | null;
+  transcriptStatus: "idle" | "loading" | "ready" | "error";
+  transcriptError: string;
 }
 
 interface CompletedAnalysis {
@@ -462,7 +509,7 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
   },
   weighing: {
     id: "weighing",
-    name: "Weighing Drill",
+    name: "Which Is Worse",
     team: true,
     howItWorks: [
       <>Spin for <strong>two ridiculous scenarios</strong>.</>,
@@ -974,7 +1021,24 @@ function formatClock(totalSeconds: number) {
 }
 
 const themeNames = themeBank.map((item) => item.theme);
-const extempQuestionTexts = extempQuestions.map((item) => item.question);
+
+// Extemp draws from U.S. (USX), international (IX), or mixed (MX) questions.
+type ExtempCategory = "MX" | "USX" | "IX";
+const EXTEMP_CATEGORY_OPTIONS: { value: ExtempCategory; label: string }[] = [
+  { value: "MX", label: "MX · Mixed" },
+  { value: "USX", label: "USX · United States" },
+  { value: "IX", label: "IX · International" },
+];
+
+function extempQuestionsFor(category: ExtempCategory) {
+  if (category === "MX") return extempQuestions;
+  return extempQuestions.filter((item) => item.category.startsWith(`${category} · `));
+}
+
+// The dropdown already names USX or IX, so cards drop that prefix; mixed draws keep it.
+function extempCardLabel(questionCategory: string, category: ExtempCategory) {
+  return category === "MX" ? questionCategory : questionCategory.replace(/^(USX|IX) · /, "");
+}
 
 function randomItem<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
@@ -1336,7 +1400,6 @@ function TimerPanel({
   pausable = false,
   recording = false,
   onPauseChange,
-  onStop,
 }: {
   seconds: number;
   buttonLabel?: string;
@@ -1353,12 +1416,11 @@ function TimerPanel({
   onSecondsChange?: (seconds: number) => void;
   // Longest length the dial can be dragged to; defaults to the longest preset.
   maxSeconds?: number;
-  // Pause/Resume and Stop buttons, greyed out until Start. Stop hands control back to the page (onStop),
-  // which resets to before Start so the speech can be redone. The Stop dot pulses while recording.
+  // Pause/Resume and Stop buttons, greyed out until Start. Stop finishes the speech like running out
+  // of time and pressing on, so the page moves to its review step. The Stop dot pulses while recording.
   pausable?: boolean;
   recording?: boolean;
   onPauseChange?: (paused: boolean) => void;
-  onStop?: () => void;
 }) {
   // Pause belongs to one run of the timer: a new key or a restart clears it.
   const runKey = `${timerKey}|${active}`;
@@ -1403,12 +1465,12 @@ function TimerPanel({
           scaleMax={maxSeconds ?? (presets?.length ? Math.max(seconds, ...presets) : seconds)}
           onDrag={!active ? onSecondsChange : undefined}
         />
-        {pausable && (!active || remaining > 0) ? (
+        {pausable ? (
           <div className="timer-controls">
             <button
               className="timer-control"
               type="button"
-              disabled={!active}
+              disabled={!active || remaining <= 0}
               onClick={() => {
                 setPausedRun(paused ? "" : runKey);
                 onPauseChange?.(!paused);
@@ -1421,17 +1483,15 @@ function TimerPanel({
               )}
               {paused ? "Resume" : "Pause"}
             </button>
-            {onStop ? (
-              <button
-                className={`timer-control stop ${active && recording && !paused ? "live" : ""}`}
-                type="button"
-                disabled={!active}
-                onClick={onStop}
-              >
-                <span className="record-dot" aria-hidden="true" />
-                Stop
-              </button>
-            ) : null}
+            <button
+              className={`timer-control stop ${active && recording && !paused && remaining > 0 ? "live" : ""}`}
+              type="button"
+              disabled={!active}
+              onClick={finishNow}
+            >
+              <span className="record-dot" aria-hidden="true" />
+              Stop
+            </button>
           </div>
         ) : null}
         {!active && onStart ? (
@@ -1488,7 +1548,7 @@ function GamePromptDisplay({ session, compact = false }: { session: SpeakingGame
             className={`game-prompt-card compact ${session.roundIndex === index ? "active" : ""}`}
             key={scenario}
           >
-            <span>Speaker {index + 1}: this is worse</span>
+            <span className={`speaker-label ${index === 0 ? "blue" : "green"}`}>Speaker {index + 1}</span>
             <strong>{scenario}</strong>
           </div>
         ))}
@@ -1794,7 +1854,8 @@ function PracticeOptionToggle({
   );
 }
 
-function PrivacyInfoButton() {
+// An "i" button whose note opens on hover, or stays open after a click.
+function InfoTip({ label, className = "", children }: { label: string; className?: string; children: React.ReactNode }) {
   // Click pins the tip open; hovering shows it only while the pointer is over the icon or tip.
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -1818,7 +1879,7 @@ function PrivacyInfoButton() {
 
   return (
     <span
-      className="info-anchor"
+      className={`info-anchor ${className ? `${className}-anchor` : ""}`}
       ref={wrapRef}
       onPointerEnter={(event) => {
         if (event.pointerType === "mouse") setHovered(true);
@@ -1828,19 +1889,27 @@ function PrivacyInfoButton() {
       <button
         className="info-button"
         type="button"
-        aria-label="About saving recordings"
+        aria-label={label}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
         i
       </button>
       {open || hovered ? (
-        <span className="privacy-tip" role="tooltip">
-          Your privacy matters. Saving recordings is optional and exists only so you can revisit your own practice.
-          Whether you save a recording or not, Speech Brigade does not listen to, reuse, or train on your audio or transcript.
+        <span className={`privacy-tip ${className}`} role="tooltip">
+          {children}
         </span>
       ) : null}
     </span>
+  );
+}
+
+function PrivacyInfoButton() {
+  return (
+    <InfoTip label="About saving recordings">
+      Your privacy matters. Saving recordings is optional and exists only so you can revisit your own practice.
+      Speech Brigade does not listen to, reuse, or train on your audio or transcript.
+    </InfoTip>
   );
 }
 
@@ -1869,14 +1938,6 @@ function PracticePrivacyOptions({
         info={<PrivacyInfoButton />}
       />
     </div>
-  );
-}
-
-function RecordingPrivacyFooter() {
-  return (
-    <p className="recording-privacy">
-      Your privacy matters to us. Speech Brigade does not listen to, reuse, or train on your audio or transcript.
-    </p>
   );
 }
 
@@ -2471,12 +2532,57 @@ function SpellCheckIcon() {
   );
 }
 
-const TAB_CONFIG: Array<{ key: AnalysisTab; label: string; icon: React.ReactNode }> = [
-  { key: "scorecard", label: "Speech Scorecard", icon: <ChartIcon /> },
-  { key: "structure", label: "Structure Sandwich", icon: <LayersIcon /> },
-  { key: "words", label: "Word Analysis", icon: <TypeIcon /> },
-  { key: "grammar", label: "Grammar", icon: <SpellCheckIcon /> },
+// shortLabel names the neighboring tabs in the pager under the transcript.
+const TAB_CONFIG: Array<{ key: AnalysisTab; label: string; shortLabel: string; icon: React.ReactNode }> = [
+  { key: "scorecard", label: "Speech Scorecard", shortLabel: "Scorecard", icon: <ChartIcon /> },
+  { key: "structure", label: "Structure Sandwich", shortLabel: "Structure", icon: <LayersIcon /> },
+  { key: "words", label: "Word Analysis", shortLabel: "Words", icon: <TypeIcon /> },
+  { key: "grammar", label: "Grammar", shortLabel: "Grammar", icon: <SpellCheckIcon /> },
 ];
+
+function ChevronIcon({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === "left" ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} />
+    </svg>
+  );
+}
+
+// Under the transcript: the previous and next tabs (wrapping around), and a dot per tab with the
+// open one stretched into a pill, like the app.
+function AnalysisTabPager({ activeTab, onSelect }: { activeTab: AnalysisTab; onSelect: (tab: AnalysisTab) => void }) {
+  const count = TAB_CONFIG.length;
+  const index = Math.max(0, TAB_CONFIG.findIndex((tab) => tab.key === activeTab));
+  const previous = TAB_CONFIG[(index - 1 + count) % count];
+  const next = TAB_CONFIG[(index + 1) % count];
+  return (
+    <nav className="tab-pager" aria-label="Analysis pages">
+      <button type="button" className="tab-pager-step" onClick={() => onSelect(previous.key)}>
+        <ChevronIcon direction="left" />
+        <span>{previous.shortLabel}</span>
+      </button>
+      <div className="tab-pager-center">
+        <div className="tab-pager-dots">
+          {TAB_CONFIG.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={tab.key === activeTab ? "active" : ""}
+              aria-label={tab.label}
+              aria-current={tab.key === activeTab ? "page" : undefined}
+              onClick={() => onSelect(tab.key)}
+            />
+          ))}
+        </div>
+        <span className="tab-pager-count">{index + 1} of {count}</span>
+      </div>
+      <button type="button" className="tab-pager-step next" onClick={() => onSelect(next.key)}>
+        <span>{next.shortLabel}</span>
+        <ChevronIcon direction="right" />
+      </button>
+    </nav>
+  );
+}
 
 function AudioPlayer({ src }: { src: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -2559,6 +2665,7 @@ function ScorecardPanel({
 }) {
   const [activeTab, setActiveTab] = useState<AnalysisTab>("scorecard");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const tabBarRef = useRef<HTMLDivElement | null>(null);
 
   const switchTab = (tab: AnalysisTab) => {
     setActiveTab(tab);
@@ -2619,7 +2726,7 @@ function ScorecardPanel({
         </div>
       </div>
 
-      <div className="tab-bar" role="tablist">
+      <div className="tab-bar" role="tablist" ref={tabBarRef}>
         {TAB_CONFIG.map((tab) => (
           <button
             key={tab.key}
@@ -2722,6 +2829,13 @@ function ScorecardPanel({
         ) : null}
       </div>
 
+      <AnalysisTabPager
+        activeTab={activeTab}
+        onSelect={(tab) => {
+          switchTab(tab);
+          tabBarRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
+      />
     </div>
   );
 }
@@ -3105,6 +3219,12 @@ export default function SpeechBrigade() {
     durationSeconds: number | null;
   } | null>(null);
   const [preparedScript, setPreparedScript] = useState<PreparedScriptContext | null>(null);
+  // Prepared events can be spoken, or analyzed from an uploaded script shown for editing first.
+  const [preparedInputMode, setPreparedInputMode] = useState<"speak" | "script">("speak");
+  const [scriptStep, setScriptStep] = useState<"upload" | "edit">("upload");
+  const [scriptDraft, setScriptDraft] = useState("");
+  const [speechReview, setSpeechReview] = useState<SpeechReview | null>(null);
+  const [extempCategory, setExtempCategory] = useState<ExtempCategory>("MX");
   const [scriptUploadStatus, setScriptUploadStatus] = useState("");
   const [pendingAuthScreen, setPendingAuthScreen] = useState<Screen | null>(null);
 
@@ -3375,23 +3495,30 @@ export default function SpeechBrigade() {
     setRecordingError("");
   };
 
-  const startMode = (mode: EventMode) => {
+  // restoring: reopening the event after a reload, which skips the sign-in gate it already passed.
+  const startMode = (mode: EventMode, restoring = false) => {
     audio.unlock();
     resetModeRound(mode);
-    goToPracticeStart(mode === "impromptu" ? "impromptuIntro" : "extempIntro");
+    const introScreen = mode === "impromptu" ? "impromptuIntro" : "extempIntro";
+    if (restoring) setScreen(introScreen);
+    else goToPracticeStart(introScreen);
   };
 
-  const startPreparedEvent = (eventId: PreparedEventId) => {
+  const startPreparedEvent = (eventId: PreparedEventId, restoring = false) => {
     audio.unlock();
     setSelectedPreparedEventId(eventId);
     setPreparedDurationSeconds(PREPARED_EVENT_CONFIGS[eventId].performanceDurationSeconds);
     setPreparedResult(null);
     setPreparedScript(null);
     setScriptUploadStatus("");
+    setPreparedInputMode("speak");
+    setScriptStep("upload");
+    setScriptDraft("");
     setRound(initialRound);
     setRecordingError("");
     setPreparedStage("setup");
-    goToPracticeStart("preparedEventIntro");
+    if (restoring) setScreen("preparedEventIntro");
+    else goToPracticeStart("preparedEventIntro");
   };
 
   const startSpeakingGame = (gameId: SpeakingGameId) => {
@@ -3406,6 +3533,13 @@ export default function SpeechBrigade() {
   useEffect(() => {
     historyKeyRef.current = `${Date.now()}-${Math.random()}`;
     window.history.replaceState({ screen: "landing", key: historyKeyRef.current }, "");
+
+    const [eventKind, eventId] = readOpenEvent().split(":");
+    const restoreId = window.setTimeout(() => {
+      if (eventKind === "impromptu" || eventKind === "extemp") startMode(eventKind, true);
+      else if (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS) startPreparedEvent(eventId as PreparedEventId, true);
+      else if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) startSpeakingGame(eventId as SpeakingGameId);
+    }, 0);
 
     const handlePopState = (event: PopStateEvent) => {
       const state = event.state as { screen?: Screen; key?: string } | null;
@@ -3445,8 +3579,21 @@ export default function SpeechBrigade() {
     };
 
     window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+    return () => {
+      window.clearTimeout(restoreId);
+      window.removeEventListener("popstate", handlePopState);
+    };
+    // Runs once on load; the start functions only read state from that first render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (NON_EVENT_SCREENS.has(screen)) writeOpenEvent("");
+    else if (screen === "impromptuIntro") writeOpenEvent("impromptu");
+    else if (screen === "extempIntro") writeOpenEvent("extemp");
+    else if (screen === "preparedEventIntro" && selectedPreparedEventId) writeOpenEvent(`prepared:${selectedPreparedEventId}`);
+    else if (screen === "gameSetup" && selectedGameId) writeOpenEvent(`game:${selectedGameId}`);
+  }, [screen, selectedPreparedEventId, selectedGameId]);
 
   const gameConfig = selectedGameId ? SPEAKING_GAME_CONFIGS[selectedGameId] : null;
 
@@ -3669,19 +3816,6 @@ export default function SpeechBrigade() {
   };
   const isRecordingAudio = (speechAnalysisEnabled || saveRecordingEnabled) && !recordingError;
 
-  // Stop throws the take away and releases the microphone; Start records a fresh one.
-  const discardRecording = () => {
-    const recorder = mediaRecorderRef.current;
-    if (recorder) {
-      recorder.onstop = null;
-      if (recorder.state !== "inactive") recorder.stop();
-    }
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaRecorderRef.current = null;
-    mediaStreamRef.current = null;
-    audioChunksRef.current = [];
-  };
-
   const stopRecording = (): Promise<Blob | null> => {
     return new Promise((resolve) => {
       const recorder = mediaRecorderRef.current;
@@ -3702,12 +3836,30 @@ export default function SpeechBrigade() {
     });
   };
 
+	  const transcribeRecording = async (blob: Blob, token: string) => {
+	    const extension = blob.type.includes("mp4") ? "m4a" : "webm";
+	    const form = new FormData();
+	    form.append("audio", blob, `recording.${extension}`);
+	    const transcribeRes = await fetch(`${supabaseUrl}/functions/v1/transcribe`, {
+	      method: "POST",
+	      headers: { Authorization: `Bearer ${token}` },
+	      body: form,
+	    });
+	    if (transcribeRes.status === 413) throw new Error(RECORDING_TOO_LARGE_MESSAGE);
+	    const transcribeBody = await transcribeRes.json();
+	    if (!transcribeRes.ok) throw new Error(transcribeBody.error || "Transcription failed");
+	    return {
+	      transcript: String(transcribeBody.transcript ?? ""),
+	      transcriptData: (transcribeBody.transcriptData ?? null) as TranscriptData | null,
+	    };
+	  };
+
 	  const saveRecordingOnly = async (
 	    blob: Blob,
 	    mode: AnalysisMode,
 	    topic: string,
 	    durationSeconds: number,
-	    options?: { resultScreen?: Screen; onError?: (message: string) => void },
+	    options?: { resultScreen?: Screen; transcript?: string; onError?: (message: string) => void },
 	  ) => {
 	    try {
 	      if (!supabase) throw new Error("Recording features need Supabase settings.");
@@ -3720,7 +3872,7 @@ export default function SpeechBrigade() {
 	          user_id: userId,
 	          mode,
 	          prompt: topic,
-	          transcript: "",
+	          transcript: options?.transcript ?? "",
 	          transcript_data: null,
 	          duration_seconds: durationSeconds,
 	          audio_url: audioUrl,
@@ -3735,18 +3887,20 @@ export default function SpeechBrigade() {
 	      options?.onError?.(message);
 	      setRound((current) => ({ ...current, analysisError: message }));
 	    } finally {
-	      setScreen(options?.resultScreen || "results");
+	      if (screenRef.current === "analyzing") setScreen(options?.resultScreen || "results");
 	    }
 	  };
 
+	  // Sends a recording (or, with a null blob, an uploaded script) through upload, transcription,
+	  // and analysis. A transcript passed in options, such as one edited on the review page, skips transcription.
 	  const runAnalysisPipeline = async (
-	    blob: Blob,
+	    blob: Blob | null,
 	    mode: AnalysisMode,
 	    topic: string,
 	    durationSeconds: number,
 	    saveRecording: boolean,
 	    options?: {
-	      scriptContext?: PreparedScriptContext | null;
+	      transcript?: { text: string; data: TranscriptData | null };
 	      resultScreen?: Screen;
 	      onComplete?: (result: CompletedAnalysis) => void;
 	      onError?: (message: string) => void;
@@ -3761,21 +3915,20 @@ export default function SpeechBrigade() {
 	      const { token, userId } = await getRecordingSession();
 
 	      setAnalyzingStage("uploading");
-	      const { extension, path, audioUrl } = await uploadRecordingBlob(blob, userId);
-	      temporaryPath = saveRecording ? null : path;
+	      let audioUrl = "";
+	      if (blob) {
+	        const upload = await uploadRecordingBlob(blob, userId);
+	        audioUrl = upload.audioUrl;
+	        temporaryPath = saveRecording ? null : upload.path;
+	      }
 
-	      setAnalyzingStage("transcribing");
-      const form = new FormData();
-      form.append("audio", blob, `recording.${extension}`);
-      const transcribeRes = await fetch(`${supabaseUrl}/functions/v1/transcribe`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-      if (transcribeRes.status === 413) throw new Error(RECORDING_TOO_LARGE_MESSAGE);
-      const transcribeBody = await transcribeRes.json();
-      if (!transcribeRes.ok) throw new Error(transcribeBody.error || "Transcription failed");
-      const { transcript, transcriptData } = transcribeBody;
+	      let transcript = options?.transcript?.text ?? "";
+	      let transcriptData = options?.transcript?.data ?? null;
+	      if (!options?.transcript) {
+	        if (!blob) throw new Error("There is nothing to analyze yet.");
+	        setAnalyzingStage("transcribing");
+	        ({ transcript, transcriptData } = await transcribeRecording(blob, token));
+	      }
 
       const { data: recordingRow, error: insertError } = await supabase
         .from("recordings")
@@ -3800,12 +3953,6 @@ export default function SpeechBrigade() {
         body: JSON.stringify({
           recordingId: recordingRow.id,
           eventMode: mode,
-          scriptContext: options?.scriptContext?.status === "ready"
-            ? {
-                fileName: options.scriptContext.fileName,
-                text: options.scriptContext.text,
-              }
-            : null,
         }),
       });
       const analyzeBody = await analyzeRes.json();
@@ -3844,7 +3991,8 @@ export default function SpeechBrigade() {
 	      if (!saveRecording) {
 	        await removeTemporaryRecording(temporaryRecordingId, temporaryPath);
 	      }
-	      setScreen(options?.resultScreen || "results");
+	      // Someone who moved on to another page while waiting stays there.
+	      if (screenRef.current === "analyzing") setScreen(options?.resultScreen || "results");
 	    }
 	  };
 
@@ -3934,30 +4082,32 @@ export default function SpeechBrigade() {
     setScriptUploadStatus("Reading script…");
     setPreparedScript(null);
     try {
-      const text = (await extractScriptText(file)).replace(/\s+/g, " ").trim();
+      // Paragraph breaks stay so the script reads naturally in the editor.
+      const text = (await extractScriptText(file)).replace(/[^\S\n]+/g, " ").replace(/\s*\n\s*\n\s*/g, "\n\n").trim();
       if (!text) {
         setPreparedScript({
           fileName: file.name,
           text: "",
           status: "empty",
-          message: "Script attached, but no readable text was found. You can still continue without script context.",
+          message: "No readable text was found in this file. Try another one.",
         });
         setScriptUploadStatus("");
         return;
       }
       setPreparedScript({
         fileName: file.name,
-        text: text.slice(0, 28000),
+        text,
         status: "ready",
-        message: "Script attached. Feedback will use it as performance context, not as a writing grade.",
+        message: "Script ready. Press Next to review it before analysis.",
       });
+      setScriptDraft(text);
       setScriptUploadStatus("");
     } catch (err) {
       setPreparedScript({
         fileName: file.name,
         text: "",
         status: "error",
-        message: err instanceof Error ? err.message : "That script could not be read. You can still continue without it.",
+        message: err instanceof Error ? err.message : "That script could not be read. Try another file.",
       });
       setScriptUploadStatus("");
     }
@@ -3976,7 +4126,7 @@ export default function SpeechBrigade() {
     setScreen("recordSpeech");
   };
 
-	  // Running out of delivery time stays on the page; "Analyze this speech" moves on.
+	  // Running out of delivery time stays on the page; Stop moves on to the review page.
 	  const handleDeliveryComplete = (elapsed: number, completion: CompletionStatus) => {
 	    const roundedElapsed = Math.round(elapsed);
 	    setRound((current) => ({ ...current, deliverySecondsUsed: roundedElapsed }));
@@ -4004,30 +4154,157 @@ export default function SpeechBrigade() {
         setScreen("results");
 	        return;
 	      }
-	      setAnalyzingStage("uploading");
-	      setScreen("analyzing");
-	      if (speechAnalysisEnabled) {
-	        void runAnalysisPipeline(blob, mode, topic, roundedElapsed, saveRecordingEnabled);
-	      } else {
-	        void saveRecordingOnly(blob, mode, topic, roundedElapsed);
-	      }
+	      openSpeechReview({ flow: "round", blob, mode, topic, elapsedSeconds: roundedElapsed, completion });
 	    });
 	  };
 
-  const handlePreparedPerformanceComplete = (elapsed: number, completion: CompletionStatus) => {
+  const transcribeSpeechReview = async (blob: Blob) => {
+    setSpeechReview((current) =>
+      current?.blob === blob ? { ...current, transcriptStatus: "loading", transcriptError: "" } : current,
+    );
+    try {
+      if (!supabaseUrl) throw new Error("Transcripts need Supabase settings.");
+      const { token } = await getRecordingSession();
+      const { transcript, transcriptData } = await transcribeRecording(blob, token);
+      // A redo or a new speech while this was running has its own review.
+      setSpeechReview((current) =>
+        current?.blob === blob
+          ? { ...current, transcript, heardTranscript: transcript, transcriptData, transcriptStatus: "ready" }
+          : current,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Transcription failed. Please try again.";
+      setSpeechReview((current) =>
+        current?.blob === blob ? { ...current, transcriptStatus: "error", transcriptError: message } : current,
+      );
+    }
+  };
+
+  // Stop leads here instead of straight to analysis. With analysis on, the transcript starts right away.
+  const openSpeechReview = (
+    review: Pick<SpeechReview, "flow" | "blob" | "mode" | "topic" | "elapsedSeconds" | "completion">,
+  ) => {
+    setSpeechReview({
+      ...review,
+      audioUrl: URL.createObjectURL(review.blob),
+      transcript: "",
+      heardTranscript: "",
+      transcriptData: null,
+      transcriptStatus: "idle",
+      transcriptError: "",
+    });
+    setScreen("reviewSpeech");
+    if (speechAnalysisEnabled) void transcribeSpeechReview(review.blob);
+  };
+
+  useEffect(() => {
+    const audioUrl = speechReview?.audioUrl;
+    if (!audioUrl) return undefined;
+    return () => URL.revokeObjectURL(audioUrl);
+  }, [speechReview?.audioUrl]);
+
+  const redoSpeech = () => {
+    setSpeechReview(null);
+    if (speechReview?.flow === "prepared") {
+      setPreparedStage("setup");
+      setScreen("preparedEventIntro");
+      return;
+    }
+    setRound((current) => ({ ...current, deliverySecondsUsed: 0 }));
+    setRoundTimerStarted(false);
+    setScreen("recordSpeech");
+  };
+
+  const preparedBaseResult = (eventId: PreparedEventId, elapsedSeconds: number, completion: CompletionStatus): PreparedPerformanceResult => ({
+    eventId,
+    elapsedSeconds,
+    timeLimitSeconds: preparedDurationSeconds,
+    completion,
+    analysis: null,
+    analysisTranscript: "",
+    analysisTranscriptData: null,
+    analysisAudioUrl: "",
+    analysisError: null,
+  });
+
+  // Analyze (or, with analysis off, save) the reviewed speech, using the transcript as edited.
+  const submitSpeechReview = () => {
+    const review = speechReview;
+    if (!review) return;
+    const transcript = review.transcriptStatus === "ready"
+      ? {
+          text: review.transcript.trim(),
+          data: review.transcript === review.heardTranscript ? review.transcriptData : null,
+        }
+      : undefined;
+    const preparedEventId = review.flow === "prepared" && selectedPreparedEventId ? selectedPreparedEventId : null;
+    const baseResult = preparedEventId ? preparedBaseResult(preparedEventId, review.elapsedSeconds, review.completion) : null;
+    const preparedOptions = baseResult
+      ? {
+          resultScreen: "preparedResults" as Screen,
+          onError: (message: string) => setPreparedResult({ ...baseResult, analysisError: message }),
+        }
+      : {};
+    setAnalyzingStage("uploading");
+    setScreen("analyzing");
+    if (!speechAnalysisEnabled) {
+      if (baseResult) setPreparedResult(baseResult);
+      void saveRecordingOnly(review.blob, review.mode, review.topic, review.elapsedSeconds, {
+        ...preparedOptions,
+        transcript: transcript?.text,
+      });
+      return;
+    }
+    void runAnalysisPipeline(review.blob, review.mode, review.topic, review.elapsedSeconds, saveRecordingEnabled, {
+      ...preparedOptions,
+      transcript,
+      onComplete: baseResult
+        ? (analysisResult) =>
+            setPreparedResult({
+              ...baseResult,
+              analysis: analysisResult.analysis,
+              analysisTranscript: analysisResult.transcript,
+              analysisTranscriptData: analysisResult.transcriptData,
+              analysisAudioUrl: analysisResult.audioUrl,
+              analysisError: null,
+            })
+        : undefined,
+    });
+  };
+
+  // The Upload script tab: the edited script is analyzed as if it were the speech's transcript.
+  const analyzeScript = () => {
     if (!selectedPreparedEventId) return;
+    const text = scriptDraft.trim();
+    const words = countTranscriptWords(text);
+    if (!words || words > SCRIPT_WORD_LIMIT) return;
+    const eventConfig = PREPARED_EVENT_CONFIGS[selectedPreparedEventId];
+    const elapsedSeconds = Math.max(1, Math.round((words / SCRIPT_WORDS_PER_MINUTE) * 60));
+    const baseResult = preparedBaseResult(selectedPreparedEventId, elapsedSeconds, "manual");
+    setPreparedResult(baseResult);
+    setAnalyzingStage("analyzing");
+    setScreen("analyzing");
+    void runAnalysisPipeline(null, selectedPreparedEventId, `${eventConfig.name} (${eventConfig.acronym})`, elapsedSeconds, saveRecordingEnabled, {
+      transcript: { text, data: null },
+      resultScreen: "preparedResults",
+      onComplete: (analysisResult) =>
+        setPreparedResult({
+          ...baseResult,
+          analysis: analysisResult.analysis,
+          analysisTranscript: analysisResult.transcript,
+          analysisTranscriptData: null,
+          analysisAudioUrl: "",
+          analysisError: null,
+        }),
+      onError: (message) => setPreparedResult({ ...baseResult, analysisError: message }),
+    });
+  };
+
+  // Running out of time stays on the page; Stop moves on to the review page.
+  const handlePreparedPerformanceComplete = (elapsed: number, completion: CompletionStatus) => {
+    if (!selectedPreparedEventId || completion === "expired") return;
     const roundedElapsed = Math.round(elapsed);
-    const baseResult: PreparedPerformanceResult = {
-      eventId: selectedPreparedEventId,
-      elapsedSeconds: roundedElapsed,
-      timeLimitSeconds: preparedDurationSeconds,
-      completion,
-      analysis: null,
-      analysisTranscript: "",
-      analysisTranscriptData: null,
-      analysisAudioUrl: "",
-      analysisError: null,
-    };
+    const baseResult = preparedBaseResult(selectedPreparedEventId, roundedElapsed, completion);
 
     if (!speechAnalysisEnabled && !saveRecordingEnabled) {
       setPreparedResult(baseResult);
@@ -4049,36 +4326,14 @@ export default function SpeechBrigade() {
         return;
       }
       const eventConfig = PREPARED_EVENT_CONFIGS[selectedPreparedEventId];
-      const topic = `${eventConfig.name} (${eventConfig.acronym})`;
-      setAnalyzingStage("uploading");
-      setScreen("analyzing");
-      if (speechAnalysisEnabled) {
-        void runAnalysisPipeline(blob, selectedPreparedEventId, topic, roundedElapsed, saveRecordingEnabled, {
-          scriptContext: preparedScript,
-          resultScreen: "preparedResults",
-          onComplete: (analysisResult) => {
-            setPreparedResult({
-              ...baseResult,
-              analysis: analysisResult.analysis,
-              analysisTranscript: analysisResult.transcript,
-              analysisTranscriptData: analysisResult.transcriptData,
-              analysisAudioUrl: analysisResult.audioUrl,
-              analysisError: null,
-            });
-          },
-          onError: (message) => {
-            setPreparedResult({ ...baseResult, analysisError: message });
-          },
-        });
-      } else {
-        void saveRecordingOnly(blob, selectedPreparedEventId, topic, roundedElapsed, {
-          resultScreen: "preparedResults",
-          onError: (message) => {
-            setPreparedResult({ ...baseResult, analysisError: message });
-          },
-        });
-        setPreparedResult(baseResult);
-      }
+      openSpeechReview({
+        flow: "prepared",
+        blob,
+        mode: selectedPreparedEventId,
+        topic: `${eventConfig.name} (${eventConfig.acronym})`,
+        elapsedSeconds: roundedElapsed,
+        completion,
+      });
     });
   };
 
@@ -4184,7 +4439,6 @@ export default function SpeechBrigade() {
             case "hotSeat":
               return (
                 <>
-                  <p className="eyebrow step-heading"><strong>Reveal</strong> your question</p>
                   <div className={`question-reveal-card ${gameRevealSpinning ? "revealing" : ""} ${gameSession?.question ? "answered" : ""}`}>
                     {gameSession?.question || "?"}
                   </div>
@@ -4207,12 +4461,12 @@ export default function SpeechBrigade() {
             case "wordFusion":
               return (
                 <>
-                  <p className="eyebrow step-heading"><strong>Spin</strong> for three words</p>
                   <TopicSpinnerGroup
                     count={3}
                     items={wordFusionBank}
                     onSpinStart={startGameReveal}
                     onLand={prepareWordFusionWords}
+                    landInitial
                     useLabel="Start speaking"
                     onUse={startGameTimer}
                     canUse={Boolean(gameSession?.words?.length) && !gameRevealSpinning}
@@ -4222,7 +4476,6 @@ export default function SpeechBrigade() {
             case "storyRelay":
               return (
                 <>
-                  <p className="eyebrow step-heading"><strong>Reveal</strong> your opening line</p>
                   <div className="game-prompt-card">
                     <span>Opening Line</span>
                     <strong>{gameSession?.openingLine || "?"}</strong>
@@ -4235,7 +4488,6 @@ export default function SpeechBrigade() {
             case "landPlane":
               return (
                 <>
-                  <p className="eyebrow step-heading"><strong>Reveal</strong> your speech outline</p>
                   {gameSession?.outline ? (
                     <>
                       <SpeechOutlineCard outline={gameSession.outline} />
@@ -4255,11 +4507,11 @@ export default function SpeechBrigade() {
             case "threeTwoOne":
               return (
                 <>
-                  <p className="eyebrow step-heading"><strong>Spin</strong> for your argument</p>
                   <TopicSpinner
                     items={threeTwoOneArguments}
                     onSpinStart={startThreeTwoOneSpin}
                     onLand={landThreeTwoOne}
+                    landInitial
                     useLabel="Start speaking"
                     onUse={startGameTimer}
                     canUse={Boolean(gameSession?.argument) && !gameRevealSpinning}
@@ -4274,12 +4526,12 @@ export default function SpeechBrigade() {
                     items={weighingScenarios}
                     layout="row"
                     headings={[
-                      <><strong>Spin</strong> for Speaker 1&apos;s topic</>,
-                      <><strong>Spin</strong> for Speaker 2&apos;s topic</>,
+                      <span className="speaker-label blue" key="speaker-1">Speaker 1</span>,
+                      <span className="speaker-label green" key="speaker-2">Speaker 2</span>,
                     ]}
-                    labels={["Speaker 1: this is worse", "Speaker 2: this is worse"]}
                     tones={["blue", "green"]}
                     spinEach
+                    landInitial
                     onSpinStart={startGameReveal}
                     onLand={(scenarios) => {
                       setGameSession({ gameId: "weighing", scenarios, roundIndex: 0 });
@@ -4295,8 +4547,17 @@ export default function SpeechBrigade() {
         })();
         return (
           <section className="reading event-setup">
-            <h1>{gameConfig.name}</h1>
-            <RulesLink label="How it works" onOpen={() => openRules(gameConfig.id)} />
+            <button type="button" className="back-link setup-back" onClick={goBack}>
+              ← Back
+            </button>
+            <h1 className="title-with-info">
+              {gameConfig.name}
+              <InfoTip label="How it works" className="title-tip">
+                {gameConfig.howItWorks.map((line, index) => (
+                  <span className="title-tip-line" key={`${gameConfig.id}-${index}`}>{line}</span>
+                ))}
+              </InfoTip>
+            </h1>
             <div className="setup-step spin-screen">{setupStep}</div>
           </section>
         );
@@ -4339,7 +4600,6 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="results">
-            <h1>Round complete!</h1>
             <div className="summary-card">
               <SummaryRow label="Game" value={gameConfig.name} />
               {gameSession.question ? <SummaryRow label="Question" value={gameSession.question} /> : null}
@@ -4456,72 +4716,113 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="reading event-setup speech-workspace prepared-setup">
-            <div className="setup-corner">
-              {practicePrivacyOptions}
-              <input
-                ref={scriptInputRef}
-                className="visually-hidden"
-                type="file"
-                accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                onChange={handleScriptFileChange}
-              />
-              <button
-                className="corner-upload"
-                type="button"
-                disabled={preparedStage !== "setup"}
-                title="PDF, DOCX, TXT, MD, and RTF files are supported."
-                onClick={() => scriptInputRef.current?.click()}
-              >
-                <span className="document-icon" aria-hidden="true" />
-                Upload script (optional)
-              </button>
-              {scriptUploadStatus ? <p className="script-status compact">{scriptUploadStatus}</p> : null}
-              {preparedScript ? (
-                <div className={`script-context-card compact ${preparedScript.status}`} title={preparedScript.message}>
-                  <strong>{preparedScript.fileName}</strong>
-                  <p>
-                    {preparedScript.status === "ready"
-                      ? "Used as performance context"
-                      : preparedScript.status === "empty"
-                        ? "No readable text found"
-                        : "Couldn't read this file"}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-            <h1>{selectedPreparedEvent.name}</h1>
-            <div className="setup-step delivery-layout">
-              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
-                <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
-              ) : null}
-              <TimerPanel
-                seconds={preparedDurationSeconds}
-                presets={PREPARED_DURATION_PRESETS}
-                onSecondsChange={setPreparedDurationSeconds}
-                pausable
-                recording={isRecordingAudio}
-                onPauseChange={pauseRecording}
-                onStop={() => {
-                  discardRecording();
-                  setPreparedStage("setup");
-                }}
-                buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
-                timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
-                active={preparedStage === "performance"}
-                onStart={() => {
-                  audio.unlock();
-                  setPreparedResult(null);
-                  setPreparedStage("performance");
-                }}
-                onComplete={handlePreparedPerformanceComplete}
-                onWarningSecond={warningTone}
-              />
-              {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) ? <RecordingPrivacyFooter /> : null}
-            </div>
-            <RulesLink label="Rules" onOpen={() => openRules(selectedPreparedEvent.id)} />
-            <button className="secondary" type="button" onClick={goBack}>
-              Back
+            <button type="button" className="back-link setup-back" onClick={goBack}>
+              ← Back
             </button>
+            <div className="setup-corner">{practicePrivacyOptions}</div>
+            <h1>{selectedPreparedEvent.name}</h1>
+            <RulesLink label="Rules" onOpen={() => openRules(selectedPreparedEvent.id)} />
+            <div className="input-mode-tabs" role="tablist" aria-label="How to practice">
+              {([
+                ["speak", "Speak"],
+                ["script", "Upload script"],
+              ] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={preparedInputMode === mode}
+                  className={preparedInputMode === mode ? "active" : ""}
+                  disabled={preparedStage === "performance"}
+                  onClick={() => setPreparedInputMode(mode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {preparedInputMode === "speak" ? (
+              <div className="setup-step delivery-layout">
+                {preparedStage === "performance" && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
+                  <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+                ) : null}
+                <TimerPanel
+                  seconds={preparedDurationSeconds}
+                  presets={PREPARED_DURATION_PRESETS}
+                  onSecondsChange={setPreparedDurationSeconds}
+                  pausable
+                  recording={isRecordingAudio}
+                  onPauseChange={pauseRecording}
+                  timerKey={`prepared-performance-${selectedPreparedEvent.id}`}
+                  active={preparedStage === "performance"}
+                  onStart={() => {
+                    audio.unlock();
+                    setPreparedResult(null);
+                    setPreparedStage("performance");
+                  }}
+                  onComplete={handlePreparedPerformanceComplete}
+                  onWarningSecond={warningTone}
+                />
+              </div>
+            ) : scriptStep === "upload" ? (
+              <div className="setup-step script-step">
+                <input
+                  ref={scriptInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  onChange={handleScriptFileChange}
+                />
+                <button className="script-upload-card" type="button" onClick={() => scriptInputRef.current?.click()}>
+                  <span className="document-icon" aria-hidden="true" />
+                  <strong>{preparedScript?.status === "ready" ? preparedScript.fileName : "Upload Script"}</strong>
+                  <span>
+                    {preparedScript?.status === "ready"
+                      ? "Click to choose a different file."
+                      : "PDF, DOCX, TXT, MD, and RTF files are supported."}
+                  </span>
+                </button>
+                {scriptUploadStatus ? <p className="script-status">{scriptUploadStatus}</p> : null}
+                {preparedScript && preparedScript.status !== "ready" ? (
+                  <p className="script-status error">{preparedScript.message}</p>
+                ) : null}
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={preparedScript?.status !== "ready"}
+                  onClick={() => setScriptStep("edit")}
+                >
+                  Next
+                </button>
+              </div>
+            ) : (
+              <div className="setup-step script-step">
+                <label className="transcript-editor">
+                  <span className="eyebrow">Your speech</span>
+                  <textarea
+                    value={scriptDraft}
+                    onChange={(event) => setScriptDraft(event.target.value)}
+                    rows={14}
+                  />
+                </label>
+                <p className={`word-count ${countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT ? "over" : ""}`}>
+                  {countTranscriptWords(scriptDraft).toLocaleString()} / {SCRIPT_WORD_LIMIT.toLocaleString()} words
+                  {countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT ? " · shorten the script to analyze it" : ""}
+                </p>
+                <div className="button-row">
+                  <button className="secondary" type="button" onClick={() => setScriptStep("upload")}>
+                    Back
+                  </button>
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={!countTranscriptWords(scriptDraft) || countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT}
+                    onClick={analyzeScript}
+                  >
+                    Analyze
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         );
       case "preparedResults": {
@@ -4538,8 +4839,6 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="results">
-            <h1>Round complete!</h1>
-            <p className="lede">Great work. You&apos;ve completed a practice performance.</p>
             {preparedResult.analysis ? (
               <ScorecardPanel
                 analysis={preparedResult.analysis}
@@ -4788,11 +5087,12 @@ export default function SpeechBrigade() {
       case "impromptuIntro":
         return (
           <section className="reading event-setup">
+            <button type="button" className="back-link setup-back" onClick={goBack}>
+              ← Back
+            </button>
             <h1>Impromptu Speaking</h1>
-            <div className="setup-corner">
-              {practicePrivacyOptions}
-              <RulesLink label="How it works" onOpen={() => openRules("impromptu")} />
-            </div>
+            <RulesLink label="How it works" onOpen={() => openRules("impromptu")} />
+            <div className="setup-corner">{practicePrivacyOptions}</div>
             <div className="setup-step spin-screen">
               <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
               <TopicSpinner
@@ -4801,6 +5101,7 @@ export default function SpeechBrigade() {
                 onSpinStart={startThemeSpin}
                 onLand={landTheme}
                 useLabel="Use this theme"
+                landInitial
                 onUse={() => setSetupStage("topics")}
                 canUse={Boolean(round.impromptuTheme) && !themeSpinning}
                 showActions={setupStage === "spin"}
@@ -4823,9 +5124,6 @@ export default function SpeechBrigade() {
                   onSelect={chooseTopic}
                   pickPrompt="Pick which of these 3 topics to speak on"
                 />
-                {round.topicOptions.length ? (
-                  <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
-                ) : null}
               </div>
             ) : null}
           </section>
@@ -4833,7 +5131,6 @@ export default function SpeechBrigade() {
       case "planSpeech":
         return (
           <section className="delivery-layout round-timer-page">
-            <h1>Plan your speech</h1>
             <TimerPanel
               seconds={round.mode === "extemp" ? 1800 : round.prepSecondsAllocated}
               maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
@@ -4844,6 +5141,7 @@ export default function SpeechBrigade() {
               }
               buttonLabel="I'm ready to speak"
               topic={selectedPrompt}
+              topicLabel="Plan your speech"
               timerKey={`${round.mode}-prep-${selectedPrompt}`}
               active={roundTimerStarted}
               onStart={() => {
@@ -4858,7 +5156,6 @@ export default function SpeechBrigade() {
       case "recordSpeech":
         return (
           <section className="delivery-layout round-timer-page">
-            <h1>Record your speech</h1>
             {roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
               <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
             ) : null}
@@ -4870,12 +5167,8 @@ export default function SpeechBrigade() {
               pausable
               recording={isRecordingAudio}
               onPauseChange={pauseRecording}
-              onStop={() => {
-                discardRecording();
-                setRoundTimerStarted(false);
-              }}
-              buttonLabel={speechAnalysisEnabled ? "Analyze this speech" : "I'm done"}
               topic={selectedPrompt}
+              topicLabel="Record your speech"
               timerKey={`${round.mode}-delivery-${selectedPrompt}`}
               active={roundTimerStarted}
               onStart={() => {
@@ -4885,9 +5178,73 @@ export default function SpeechBrigade() {
               onComplete={handleDeliveryComplete}
               onWarningSecond={warningTone}
             />
-            {speechAnalysisEnabled || saveRecordingEnabled ? <RecordingPrivacyFooter /> : null}
           </section>
         );
+      case "reviewSpeech": {
+        if (!speechReview) {
+          return (
+            <section className="results">
+              <p className="eyebrow">No speech to review</p>
+              <button className="secondary" type="button" onClick={() => setScreen("events")}>Back to Events</button>
+            </section>
+          );
+        }
+        const reviewWords = countTranscriptWords(speechReview.transcript);
+        return (
+          <section className="reading review-speech">
+            <h1>Review your speech</h1>
+            {speechReview.topic ? (
+              <div className="topic-banner">
+                <span>{`Your ${speechReview.topic.endsWith("?") ? "question" : "topic"}`}</span>
+                <strong>{speechReview.topic}</strong>
+              </div>
+            ) : null}
+            <AudioPlayer src={speechReview.audioUrl} />
+            <div className="review-transcript">
+              {speechReview.transcriptStatus === "idle" ? (
+                <button className="secondary" type="button" onClick={() => void transcribeSpeechReview(speechReview.blob)}>
+                  Add transcript
+                </button>
+              ) : speechReview.transcriptStatus === "loading" ? (
+                <p className="vault-status" role="status">Transcribing your speech…</p>
+              ) : speechReview.transcriptStatus === "error" ? (
+                <>
+                  <p className="vault-status error">{speechReview.transcriptError}</p>
+                  <button className="secondary" type="button" onClick={() => void transcribeSpeechReview(speechReview.blob)}>
+                    Try again
+                  </button>
+                </>
+              ) : (
+                <>
+                  <label className="transcript-editor">
+                    <span className="eyebrow">Transcript</span>
+                    <textarea
+                      value={speechReview.transcript}
+                      onChange={(event) => {
+                        const transcript = event.target.value;
+                        setSpeechReview((current) => (current ? { ...current, transcript } : current));
+                      }}
+                      rows={10}
+                    />
+                  </label>
+                  <p className="word-count">{reviewWords.toLocaleString()} words · edit anything the transcript misheard</p>
+                </>
+              )}
+            </div>
+            <div className="button-row">
+              <button className="secondary" type="button" onClick={redoSpeech}>Redo speech</button>
+              <button
+                className="primary"
+                type="button"
+                disabled={speechReview.transcriptStatus === "loading" || (speechReview.transcriptStatus === "ready" && speechAnalysisEnabled && !reviewWords)}
+                onClick={submitSpeechReview}
+              >
+                {speechAnalysisEnabled ? "Analyze speech" : "Save recording"}
+              </button>
+            </div>
+          </section>
+        );
+      }
       case "analyzing":
         return (
           <section className="countdown-screen analyzing-screen">
@@ -4911,17 +5268,30 @@ export default function SpeechBrigade() {
       case "extempIntro":
         return (
           <section className="reading event-setup">
+            <button type="button" className="back-link setup-back" onClick={goBack}>
+              ← Back
+            </button>
             <h1>Extemporaneous Speaking</h1>
-            <div className="setup-corner">
-              {practicePrivacyOptions}
-              <RulesLink label="How it works" onOpen={() => openRules("extemp")} />
-            </div>
+            <RulesLink label="How it works" onOpen={() => openRules("extemp")} />
+            <div className="setup-corner">{practicePrivacyOptions}</div>
             <div className="setup-step spin-screen">
-              <p className="eyebrow step-heading"><strong>Spin</strong> for a list of questions, and <strong>choose</strong> which to speak on</p>
+              <div className="extemp-category-select">
+                <FilterSelect
+                  label="Question category"
+                  value={extempCategory}
+                  options={EXTEMP_CATEGORY_OPTIONS}
+                  onChange={(category) => {
+                    setExtempCategory(category);
+                    setLockedChoice("");
+                    setRound((current) => ({ ...current, questionOptions: [], selectedQuestion: null }));
+                  }}
+                />
+              </div>
               <TopicSpinnerGroup
+                key={extempCategory}
                 count={3}
-                items={extempQuestionTexts}
-                labels={round.questionOptions.map((question) => question.category)}
+                items={extempQuestionsFor(extempCategory).map((item) => item.question)}
+                labels={round.questionOptions.map((question) => extempCardLabel(question.category, extempCategory))}
                 onSpinStart={() => audio.unlock()}
                 onLand={landQuestions}
                 canSpin={round.questionOptions.length === 0}
@@ -4935,9 +5305,6 @@ export default function SpeechBrigade() {
                 }}
                 pickPrompt="Pick which of these 3 questions to speak on"
               />
-              {round.questionOptions.length ? (
-                <p className="competition-note">Note that you will only have 30 seconds to choose during the competition.</p>
-              ) : null}
             </div>
           </section>
         );
@@ -4965,8 +5332,6 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="results">
-            <h1>Round complete!</h1>
-            <p className="lede">Good job. You completed an {round.mode === "extemp" ? "Extemporaneous Speaking" : "Impromptu"} round.</p>
             <div className="summary-card">
               <SummaryRow label="Event" value={modeLabel} />
               {round.mode === "impromptu" ? (
@@ -5115,6 +5480,7 @@ export default function SpeechBrigade() {
       <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={screen}>
         {content}
       </div>
+      {screen === "landing" ? (
       <button
         type="button"
         ref={creatorButtonRef}
@@ -5124,6 +5490,8 @@ export default function SpeechBrigade() {
       >
         <span className="creator-copy">Learn About Speech Brigade&apos;s Founders</span>
       </button>
+      ) : null}
+      {screen === "landing" ? (
       <a
         className={`tip-float ${hideTipForMobileOverlap ? "tip-float-hidden" : ""}`}
         href="https://buymeacoffee.com/speechbrigade"
@@ -5134,6 +5502,7 @@ export default function SpeechBrigade() {
         <span className="tip-copy-desktop">Leave a tip to keep our site free!</span>
         <span className="tip-copy-mobile">Leave a tip</span>
       </a>
+      ) : null}
       {infoModal ? (
         <div
           className="founders-modal-backdrop"
