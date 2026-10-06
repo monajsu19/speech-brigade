@@ -66,6 +66,7 @@ export function TopicSpinner({
   onUse,
   canUse,
   showActions = true,
+  landInitial = false,
 }: {
   items: string[];
   onSpinStart?: () => void;
@@ -74,11 +75,14 @@ export function TopicSpinner({
   onUse: () => void;
   canUse: boolean;
   showActions?: boolean;
+  // Reports the item the reel shows before any spin, so it can be used without spinning.
+  landInitial?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const spinnerRef = useRef<Spinner | null>(null);
   const onLandRef = useRef(onLand);
   const itemsRef = useRef(items);
+  const landInitialRef = useRef(landInitial);
 
   useEffect(() => {
     onLandRef.current = onLand;
@@ -97,6 +101,8 @@ export function TopicSpinner({
       onLand: (item) => onLandRef.current(item),
     });
     spinnerRef.current = spinner;
+    const initialItem = spinner.getCurrentItem();
+    if (landInitialRef.current && initialItem) onLandRef.current(initialItem);
     return () => {
       spinner.destroy();
       spinnerRef.current = null;
@@ -157,6 +163,7 @@ export function TopicSpinnerGroup({
   selectedValue,
   onSelect,
   pickPrompt,
+  landInitial = false,
 }: {
   count: number;
   items: string[];
@@ -174,6 +181,8 @@ export function TopicSpinnerGroup({
   selectedValue?: string;
   onSelect?: (item: string) => void;
   pickPrompt?: string;
+  // Reports what the reels show before any spin, so that draw can be used without spinning.
+  landInitial?: boolean;
 }) {
   const containerRefs = useRef<(HTMLDivElement | null)[]>([]);
   const spinnersRef = useRef<Spinner[]>([]);
@@ -181,7 +190,7 @@ export function TopicSpinnerGroup({
   const onLandRef = useRef(onLand);
   const itemsRef = useRef(items);
   // Tones and spinEach are fixed per use, so the reels are only rebuilt when the count changes.
-  const setupRef = useRef({ tones, spinEach });
+  const setupRef = useRef({ tones, spinEach, landInitial });
   const [results, setResults] = useState<string[]>([]);
   const [spinningCards, setSpinningCards] = useState<boolean[]>([]);
   const spinning = spinningCards.some(Boolean);
@@ -216,7 +225,16 @@ export function TopicSpinnerGroup({
       ];
     });
     spinnersRef.current = spinners;
+    // Each reel shuffles its own opening item, so only an opening draw with no repeats counts.
+    const initial = spinners.map((spinner) => spinner.getCurrentItem() || "");
+    const landInitialId = window.setTimeout(() => {
+      if (!setupRef.current.landInitial || initial.length < count || new Set(initial.filter(Boolean)).size < count) return;
+      resultsRef.current = initial;
+      setResults(initial);
+      onLandRef.current(initial);
+    }, 0);
     return () => {
+      window.clearTimeout(landInitialId);
       spinners.forEach((spinner) => spinner.destroy());
       spinnersRef.current = [];
     };
