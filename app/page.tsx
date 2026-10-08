@@ -2631,7 +2631,41 @@ function AnalysisTabPager({ activeTab, onSelect }: { activeTab: AnalysisTab; onS
   );
 }
 
+// Recordings live in a private bucket. Rows keep the file's storage URL; playback swaps it for a
+// short-lived signed link that only the recording's owner can create.
+const RECORDINGS_BUCKET = "impromptu-recordings";
+const SIGNED_AUDIO_SECONDS = 60 * 60;
+
+function recordingPathFromUrl(url: string) {
+  const match = url.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/impromptu-recordings\/([^?#]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function usePlayableAudioSrc(src: string) {
+  const path = recordingPathFromUrl(src);
+  const [signed, setSigned] = useState<{ path: string; url: string } | null>(null);
+
+  useEffect(() => {
+    if (!path || !supabase) return undefined;
+    let cancelled = false;
+    void supabase.storage
+      .from(RECORDINGS_BUCKET)
+      .createSignedUrl(path, SIGNED_AUDIO_SECONDS)
+      .then(({ data }) => {
+        if (!cancelled && data?.signedUrl) setSigned({ path, url: data.signedUrl });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  // Local (blob:) audio plays as is; stored audio waits for its signed link.
+  if (!path) return src;
+  return signed?.path === path ? signed.url : undefined;
+}
+
 function AudioPlayer({ src }: { src: string }) {
+  const playableSrc = usePlayableAudioSrc(src);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -2651,7 +2685,7 @@ function AudioPlayer({ src }: { src: string }) {
       audioEl.removeEventListener("loadedmetadata", onLoaded);
       audioEl.removeEventListener("ended", onEnded);
     };
-  }, [src]);
+  }, [playableSrc]);
 
   const toggle = () => {
     const audioEl = audioRef.current;
@@ -2678,7 +2712,7 @@ function AudioPlayer({ src }: { src: string }) {
 
   return (
     <div className="audio-player">
-      <audio ref={audioRef} src={src} preload="metadata" />
+      <audio ref={audioRef} src={playableSrc} preload="metadata" />
       <button type="button" className="audio-play-button" onClick={toggle} aria-label={isPlaying ? "Pause" : "Play"}>
         {isPlaying ? <PauseIcon /> : <PlayIcon />}
       </button>
@@ -3976,7 +4010,7 @@ export default function SpeechBrigade() {
 	    const extension = blob.type.includes("mp4") ? "m4a" : "webm";
 	    const path = `${userId}/${Date.now()}.${extension}`;
 	    const { error: uploadError } = await supabase.storage
-	      .from("impromptu-recordings")
+	      .from(RECORDINGS_BUCKET)
 	      .upload(path, blob, { contentType: blob.type || "audio/webm" });
 	    if (uploadError) {
 	      const statusCode = "statusCode" in uploadError ? String(uploadError.statusCode) : "";
@@ -3985,7 +4019,9 @@ export default function SpeechBrigade() {
 	      }
 	      throw uploadError;
 	    }
-	    const { data: publicUrlData } = supabase.storage.from("impromptu-recordings").getPublicUrl(path);
+	    // The bucket is private, so this URL doesn't play on its own; it records where the file is, and
+	    // AudioPlayer turns it into a signed link.
+	    const { data: publicUrlData } = supabase.storage.from(RECORDINGS_BUCKET).getPublicUrl(path);
 	    return { extension, path, audioUrl: publicUrlData.publicUrl };
 	  };
 
@@ -3993,7 +4029,7 @@ export default function SpeechBrigade() {
 	    if (!supabase) return;
 	    const cleanupTasks: Array<Promise<unknown>> = [];
 	    if (recordingId) cleanupTasks.push(Promise.resolve(supabase.from("recordings").delete().eq("id", recordingId)));
-	    if (path) cleanupTasks.push(supabase.storage.from("impromptu-recordings").remove([path]));
+	    if (path) cleanupTasks.push(supabase.storage.from(RECORDINGS_BUCKET).remove([path]));
 	    const results = await Promise.allSettled(cleanupTasks);
 	    results.forEach((result) => {
 	      if (result.status === "rejected") {
