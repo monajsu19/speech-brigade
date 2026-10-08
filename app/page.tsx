@@ -19,7 +19,6 @@ type Screen =
   | "gameSetup"
   | "gameRounds"
   | "gameResults"
-  | "eventsAuth"
   | "events"
   | "preparedEventIntro"
   | "preparedResults"
@@ -46,13 +45,21 @@ const RECORDING_TOO_LARGE_MESSAGE = "Congrats! You spoke so much we can't handle
 // browser history entry, so going back skips over them to the last screen the user chose.
 const TRANSIENT_SCREENS = new Set<Screen>([
   "gameRounds",
-  "eventsAuth",
   "signIn",
   "planSpeech",
   "recordSpeech",
   "reviewSpeech",
   "analyzing",
 ]);
+
+// Where Back goes when the browser history can't be trusted to hold the previous screen.
+const PARENT_SCREENS: Partial<Record<Screen, Screen>> = {
+  impromptuIntro: "events",
+  extempIntro: "events",
+  preparedEventIntro: "events",
+  gameSetup: "gamesSelection",
+  rulesDetail: "rules",
+};
 
 // Reloading mid-event returns to that event's first page, so the open event is kept per tab.
 const OPEN_EVENT_STORAGE_KEY = "speech-brigade-open-event";
@@ -62,8 +69,12 @@ const NON_EVENT_SCREENS = new Set<Screen>(["landing", "events", "gamesSelection"
 // Production runs on the Next.js app router, which reloads the page on Back when a history entry
 // lacks its own markers (__NA and its route tree). This page's first replaceState runs before the
 // router patches history to copy them, so carry over whatever router state the entry already has.
-function withRouterHistoryState(state: { screen: Screen; key: string }) {
-  return { ...(window.history.state ?? {}), ...state };
+// The router's saved scroll position is left out: copied onto another screen's entry, it would
+// scroll that screen to where the previous one was when Back or Forward returns to it.
+function withRouterHistoryState(state: { screen: Screen; key: string; from?: Screen }) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { __vinext_scrollX, __vinext_scrollY, ...routerState } = window.history.state ?? {};
+  return { ...routerState, ...state };
 }
 
 function readOpenEvent() {
@@ -80,6 +91,30 @@ function writeOpenEvent(value: string) {
     else window.sessionStorage.removeItem(OPEN_EVENT_STORAGE_KEY);
   } catch {
     // Without storage, a reload simply starts at the homepage.
+  }
+}
+
+// Opening an event while signed out goes to sign in first. Google sign-in and email links reload the
+// page, so the event waits here (per tab, for a while) and reopens once the person is signed in.
+const PENDING_SIGN_IN_EVENT_KEY = "speech-brigade-pending-sign-in-event";
+const PENDING_SIGN_IN_EVENT_MS = 30 * 60 * 1000;
+
+function readPendingSignInEvent() {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(PENDING_SIGN_IN_EVENT_KEY) || "null") as { event?: string; at?: number } | null;
+    if (!saved?.event || !saved.at || Date.now() - saved.at > PENDING_SIGN_IN_EVENT_MS) return "";
+    return saved.event;
+  } catch {
+    return "";
+  }
+}
+
+function writePendingSignInEvent(event: string) {
+  try {
+    if (event) window.sessionStorage.setItem(PENDING_SIGN_IN_EVENT_KEY, JSON.stringify({ event, at: Date.now() }));
+    else window.sessionStorage.removeItem(PENDING_SIGN_IN_EVENT_KEY);
+  } catch {
+    // Without storage, signing in through a redirect lands on the homepage.
   }
 }
 
@@ -3226,9 +3261,13 @@ export default function SpeechBrigade() {
     const current = screenRef.current;
     if (next === current) return;
     screenRef.current = next;
-    const state = withRouterHistoryState({ screen: next, key: historyKeyRef.current });
-    if (TRANSIENT_SCREENS.has(current)) window.history.replaceState(state, "");
-    else window.history.pushState(state, "");
+    if (TRANSIENT_SCREENS.has(current)) {
+      // The replaced entry keeps the screen it was reached from.
+      const from = window.history.state?.key === historyKeyRef.current ? window.history.state.from : undefined;
+      window.history.replaceState(withRouterHistoryState({ screen: next, key: historyKeyRef.current, from }), "");
+    } else {
+      window.history.pushState(withRouterHistoryState({ screen: next, key: historyKeyRef.current, from: current }), "");
+    }
     setScreenState(next);
   }, []);
 
@@ -3237,14 +3276,17 @@ export default function SpeechBrigade() {
     setScreen("rulesDetail");
   };
 
+  // Back returns to the previous screen when this page load pushed the current entry; otherwise
+  // (after a reload, a sign-in redirect, or an entry the router added) the previous entry may load
+  // the page fresh, which would reopen the saved event, so go to the screen's parent instead.
   const goBack = useCallback(() => {
-    if (window.history.state?.key === historyKeyRef.current && screenRef.current !== "landing") {
-      window.history.back();
-    } else {
-      screenRef.current = "landing";
-      setScreenState("landing");
-    }
-  }, []);
+    const current = screenRef.current;
+    if (current === "landing") return;
+    writeOpenEvent("");
+    const state = window.history.state;
+    if (state?.key === historyKeyRef.current && state.from) window.history.back();
+    else setScreen(PARENT_SCREENS[current] ?? "landing");
+  }, [setScreen]);
   const [round, setRound] = useState<RoundState>(initialRound);
   // Bumped to remount the theme spinner reel when a round resets.
   const [themeReelKey, setThemeReelKey] = useState(0);
@@ -3293,7 +3335,6 @@ export default function SpeechBrigade() {
   const [vaultFilters, setVaultFilters] = useState<VaultFilters>(DEFAULT_VAULT_FILTERS);
   const vaultFiltersActive = JSON.stringify(vaultFilters) !== JSON.stringify(DEFAULT_VAULT_FILTERS);
   const [foundersOpen, setFoundersOpen] = useState(false);
-  const [hideTipForMobileOverlap, setHideTipForMobileOverlap] = useState(false);
   const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
   const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<SpeakingGameId | null>(null);
@@ -3320,14 +3361,14 @@ export default function SpeechBrigade() {
   // Impromptu and Extemp setups either spin the built-in topics or the person's own ("My Topic").
   const [topicSource, setTopicSource] = useState<"spin" | "mine">("spin");
   const [scriptUploadStatus, setScriptUploadStatus] = useState("");
-  const [pendingAuthScreen, setPendingAuthScreen] = useState<Screen | null>(null);
+  // The event a signed-out person was opening, shown once they sign in on this page.
+  const pendingAuthScreenRef = useRef<Screen | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const saveRecordingPreferenceLoadedRef = useRef(false);
   const scriptInputRef = useRef<HTMLInputElement | null>(null);
-  const creatorButtonRef = useRef<HTMLButtonElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const lastPointerTypeRef = useRef("");
 
@@ -3371,19 +3412,17 @@ export default function SpeechBrigade() {
   }, []);
 
   useEffect(() => {
-    if (screen === "eventsAuth" && session) {
+    if (screen === "signIn" && session && !passwordRecovery) {
       const id = window.setTimeout(() => {
-        setScreen(pendingAuthScreen || "events");
-        setPendingAuthScreen(null);
+        const pending = pendingAuthScreenRef.current;
+        pendingAuthScreenRef.current = null;
+        writePendingSignInEvent("");
+        setScreen(pending || "settings");
       }, 0);
       return () => window.clearTimeout(id);
     }
-    if (screen === "signIn" && session && !passwordRecovery) {
-      const id = window.setTimeout(() => setScreen("settings"), 0);
-      return () => window.clearTimeout(id);
-    }
     return undefined;
-  }, [screen, session, setScreen, pendingAuthScreen, passwordRecovery]);
+  }, [screen, session, setScreen, passwordRecovery]);
 
   // Page sizes by offset: the first 10, the next 20, then everything else.
   const fetchVaultPage = useCallback(async (offset: number) => {
@@ -3480,37 +3519,6 @@ export default function SpeechBrigade() {
   }, [foundersOpen]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const mobileQuery = window.matchMedia("(max-width: 760px)");
-    const updateTipVisibility = () => {
-      if (!mobileQuery.matches) {
-        setHideTipForMobileOverlap(false);
-        return;
-      }
-
-      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-      const blockingElements = [headerRef.current, creatorButtonRef.current].filter(Boolean) as HTMLElement[];
-      const shouldHide = blockingElements.some((element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.bottom > 0 && rect.top < viewportHeight;
-      });
-      setHideTipForMobileOverlap(shouldHide);
-    };
-
-    const frame = window.requestAnimationFrame(updateTipVisibility);
-    window.addEventListener("scroll", updateTipVisibility, { passive: true });
-    window.addEventListener("resize", updateTipVisibility);
-    mobileQuery.addEventListener("change", updateTipVisibility);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", updateTipVisibility);
-      window.removeEventListener("resize", updateTipVisibility);
-      mobileQuery.removeEventListener("change", updateTipVisibility);
-    };
-  }, [screen]);
-
-  useEffect(() => {
     if (!infoModal) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setInfoModal(null);
@@ -3559,13 +3567,18 @@ export default function SpeechBrigade() {
     setInfoModal(null);
   };
 
-  const goToPracticeStart = (nextScreen: Screen) => {
+  // openEvent names the event the way the open-event storage does, so a redirect sign-in can reopen it.
+  const goToPracticeStart = (nextScreen: Screen, openEvent: string) => {
     if (isSupabaseConfigured && !session) {
-      setPendingAuthScreen(nextScreen);
-      setScreen("eventsAuth");
+      pendingAuthScreenRef.current = nextScreen;
+      writePendingSignInEvent(openEvent);
+      setAuthMode("signIn");
+      setAuthStatus("idle");
+      setAuthError("");
+      setScreen("signIn");
       return;
     }
-    setPendingAuthScreen(null);
+    pendingAuthScreenRef.current = null;
     setScreen(nextScreen);
   };
 
@@ -3576,7 +3589,8 @@ export default function SpeechBrigade() {
     setPreparedResult(null);
     setPreparedScript(null);
     setScriptUploadStatus("");
-    setPendingAuthScreen(null);
+    pendingAuthScreenRef.current = null;
+    writePendingSignInEvent("");
     setSelectedGameId(null);
     setGameSession(null);
     setGameRevealSpinning(false);
@@ -3604,7 +3618,7 @@ export default function SpeechBrigade() {
     resetModeRound(mode);
     const introScreen = mode === "impromptu" ? "impromptuIntro" : "extempIntro";
     if (restoring) setScreen(introScreen);
-    else goToPracticeStart(introScreen);
+    else goToPracticeStart(introScreen, mode);
   };
 
   const startPreparedEvent = (eventId: PreparedEventId, restoring = false) => {
@@ -3621,7 +3635,7 @@ export default function SpeechBrigade() {
     setRecordingError("");
     setPreparedStage("setup");
     if (restoring) setScreen("preparedEventIntro");
-    else goToPracticeStart("preparedEventIntro");
+    else goToPracticeStart("preparedEventIntro", `prepared:${eventId}`);
   };
 
   const startSpeakingGame = (gameId: SpeakingGameId) => {
@@ -3633,16 +3647,35 @@ export default function SpeechBrigade() {
     setScreen("gameSetup");
   };
 
+  // Opens a saved event ("impromptu", "extemp", "prepared:<id>", or "game:<id>") without the sign-in gate.
+  const reopenEvent = (openEvent: string) => {
+    const [eventKind, eventId] = openEvent.split(":");
+    // Put the event's list page underneath so Back from the reopened event lands there.
+    if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) setScreen("gamesSelection");
+    else if (eventKind === "impromptu" || eventKind === "extemp" || (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS)) setScreen("events");
+    if (eventKind === "impromptu" || eventKind === "extemp") startMode(eventKind, true);
+    else if (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS) startPreparedEvent(eventId as PreparedEventId, true);
+    else if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) startSpeakingGame(eventId as SpeakingGameId);
+  };
+
+  // Back from a Google or email-link sign-in: the page reloaded, so reopen the event they were opening.
+  useEffect(() => {
+    if (!session || screenRef.current === "signIn") return undefined;
+    const pending = readPendingSignInEvent();
+    if (!pending) return undefined;
+    writePendingSignInEvent("");
+    const id = window.setTimeout(() => reopenEvent(pending), 0);
+    return () => window.clearTimeout(id);
+    // Runs when the session arrives; reopenEvent only starts screens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   useEffect(() => {
     historyKeyRef.current = `${Date.now()}-${Math.random()}`;
     window.history.replaceState(withRouterHistoryState({ screen: "landing", key: historyKeyRef.current }), "");
 
-    const [eventKind, eventId] = readOpenEvent().split(":");
-    const restoreId = window.setTimeout(() => {
-      if (eventKind === "impromptu" || eventKind === "extemp") startMode(eventKind, true);
-      else if (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS) startPreparedEvent(eventId as PreparedEventId, true);
-      else if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) startSpeakingGame(eventId as SpeakingGameId);
-    }, 0);
+    const openEvent = readOpenEvent();
+    const restoreId = window.setTimeout(() => reopenEvent(openEvent), 0);
 
     const handlePopState = (event: PopStateEvent) => {
       const state = event.state as { screen?: Screen; key?: string } | null;
@@ -3689,6 +3722,16 @@ export default function SpeechBrigade() {
     // Runs once on load; the start functions only read state from that first render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Leaving the sign-in page without signing in drops the event it was going to open.
+  const previousScreenRef = useRef(screen);
+  useEffect(() => {
+    if (previousScreenRef.current === "signIn" && screen !== "signIn" && !session) {
+      pendingAuthScreenRef.current = null;
+      writePendingSignInEvent("");
+    }
+    previousScreenRef.current = screen;
+  }, [screen, session]);
 
   useEffect(() => {
     if (NON_EVENT_SCREENS.has(screen)) writeOpenEvent("");
@@ -5151,30 +5194,6 @@ export default function SpeechBrigade() {
           </section>
         );
       }
-      case "eventsAuth":
-        return (
-          <section className="narrow auth-screen">
-            <p className="eyebrow">{isSupabaseConfigured ? "Sign in to continue" : "Local preview"}</p>
-            <h1>{isSupabaseConfigured ? "Sign in to your account" : "Practice mode is available"}</h1>
-            <p className="lede">
-              {isSupabaseConfigured
-                ? "Sign in to your account, or sign up for a new one, to start a Competitive Speech & Debate practice round."
-                : "Supabase is not configured on this computer, so saved recordings and speech analysis are disabled. Timers, prompts, and practice rounds still work."}
-            </p>
-            {!isSupabaseConfigured ? (
-              <button className="primary" type="button" onClick={() => setScreen("events")}>
-                Continue to Events
-              </button>
-            ) : (
-              <button className="primary" type="button" onClick={() => setScreen("signIn")}>
-                Sign In
-              </button>
-            )}
-            <button className="secondary" type="button" onClick={goBack}>
-              Back
-            </button>
-          </section>
-        );
       case "signIn": {
         const passwordToggle = (
           <button
@@ -5865,7 +5884,6 @@ export default function SpeechBrigade() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <div className="ambient" aria-hidden="true" />
 	      <header className="app-header" ref={headerRef}>
 	        {screen === "landing" ? (
 	          <>
@@ -5931,31 +5949,25 @@ export default function SpeechBrigade() {
         {content}
       </div>
       {screen === "landing" ? (
-      <button
-        type="button"
-        ref={creatorButtonRef}
-        className="creator-float"
-        onClick={() => setFoundersOpen(true)}
-        aria-label="Meet Speech Brigade's founders"
-      >
-        <span className="creator-faces" aria-hidden="true">
-          <Image unoptimized src="/founders/jd-hopper-founder.png" alt="" width={64} height={64} />
-          <Image unoptimized src="/founders/mona-su.jpg" alt="" width={64} height={64} />
-        </span>
-        <span className="creator-copy">Meet the founders →</span>
-      </button>
-      ) : null}
-      {screen === "landing" ? (
-      <a
-        className={`tip-float ${hideTipForMobileOverlap ? "tip-float-hidden" : ""}`}
-        href="https://buymeacoffee.com/speechbrigade"
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Leave a tip to keep Speech Brigade free"
-      >
-        <span className="tip-copy-desktop">Leave a tip to keep our site free!</span>
-        <span className="tip-copy-mobile">Leave a tip</span>
-      </a>
+        // A quiet footer for the tip jar and the founders, so nothing floats over the page on phones.
+        <footer className="home-footer">
+          <a
+            className="home-footer-tip"
+            href="https://buymeacoffee.com/speechbrigade"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Leave a tip to keep Speech Brigade free"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+            </svg>
+            Leave a tip
+          </a>
+          <span aria-hidden="true">·</span>
+          <button className="home-footer-founders" type="button" onClick={() => setFoundersOpen(true)}>
+            Meet the founders
+          </button>
+        </footer>
       ) : null}
       {infoModal ? (
         <div
