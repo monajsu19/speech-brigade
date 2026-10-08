@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
+import { MyTopics } from "./MyTopics";
 import { TopicSpinner, TopicSpinnerGroup } from "./TopicSpinner";
 
 type EventMode = "impromptu" | "extemp";
@@ -84,6 +85,9 @@ function writeOpenEvent(value: string) {
 
 // Uploaded scripts are analyzed as a transcript, up to this many words.
 const SCRIPT_WORD_LIMIT = 2500;
+// Speech analysis needs enough to judge; Impromptu transcripts are capped.
+const ANALYSIS_MIN_WORDS = 70;
+const IMPROMPTU_WORD_LIMIT = 1200;
 // Scripts have no recording, so their length in time is estimated at a typical speaking pace.
 const SCRIPT_WORDS_PER_MINUTE = 150;
 
@@ -3232,6 +3236,8 @@ export default function SpeechBrigade() {
   const [scriptDraft, setScriptDraft] = useState("");
   const [speechReview, setSpeechReview] = useState<SpeechReview | null>(null);
   const [extempCategory, setExtempCategory] = useState<ExtempCategory>("MX");
+  // Impromptu and Extemp setups either spin the built-in topics or the person's own ("My Topic").
+  const [topicSource, setTopicSource] = useState<"spin" | "mine">("spin");
   const [scriptUploadStatus, setScriptUploadStatus] = useState("");
   const [pendingAuthScreen, setPendingAuthScreen] = useState<Screen | null>(null);
 
@@ -4125,6 +4131,43 @@ export default function SpeechBrigade() {
     setScreen("planSpeech");
   };
 
+  // A topic of their own skips the theme and three-choice draws and goes straight to planning.
+  const startMyTopic = (topic: string) => {
+    if (round.mode === "extemp") {
+      setRound((current) => ({
+        ...current,
+        selectedQuestion: { category: "My Topic", question: topic },
+        prepSecondsAllocated: 1800,
+        deliverySecondsAllocated: 420,
+        roundStartTime: Date.now(),
+      }));
+    } else {
+      setRound((current) => ({ ...current, impromptuTheme: "My Topic", selectedTopic: topic, roundStartTime: Date.now() }));
+    }
+    startPlanning();
+  };
+
+  const topicSourceTabs = (
+    <div className="input-mode-tabs topic-source-tabs" role="tablist" aria-label="Where your topic comes from">
+      {([
+        ["spin", "Spin"],
+        ["mine", "My Topic"],
+      ] as const).map(([source, label]) => (
+        <button
+          key={source}
+          type="button"
+          role="tab"
+          aria-selected={topicSource === source}
+          className={topicSource === source ? "active" : ""}
+          disabled={themeSpinning}
+          onClick={() => setTopicSource(source)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   // Running out of prep time stays on the page; "I'm ready to speak" moves on.
   const handlePrepComplete = (elapsed: number, completion: CompletionStatus) => {
     setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
@@ -4284,7 +4327,7 @@ export default function SpeechBrigade() {
     if (!selectedPreparedEventId) return;
     const text = scriptDraft.trim();
     const words = countTranscriptWords(text);
-    if (!words || words > SCRIPT_WORD_LIMIT) return;
+    if (words < ANALYSIS_MIN_WORDS || words > SCRIPT_WORD_LIMIT) return;
     const eventConfig = PREPARED_EVENT_CONFIGS[selectedPreparedEventId];
     const elapsedSeconds = Math.max(1, Math.round((words / SCRIPT_WORDS_PER_MINUTE) * 60));
     const baseResult = preparedBaseResult(selectedPreparedEventId, elapsedSeconds, "manual");
@@ -4813,7 +4856,11 @@ export default function SpeechBrigade() {
                 </label>
                 <p className={`word-count ${countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT ? "over" : ""}`}>
                   {countTranscriptWords(scriptDraft).toLocaleString()} / {SCRIPT_WORD_LIMIT.toLocaleString()} words
-                  {countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT ? " · shorten the script to analyze it" : ""}
+                  {countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT
+                    ? " · shorten the script to analyze it"
+                    : countTranscriptWords(scriptDraft) < ANALYSIS_MIN_WORDS
+                      ? ` · analysis needs at least ${ANALYSIS_MIN_WORDS} words`
+                      : ""}
                 </p>
                 <div className="button-row">
                   <button className="secondary" type="button" onClick={() => setScriptStep("upload")}>
@@ -4822,7 +4869,7 @@ export default function SpeechBrigade() {
                   <button
                     className="primary"
                     type="button"
-                    disabled={!countTranscriptWords(scriptDraft) || countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT}
+                    disabled={countTranscriptWords(scriptDraft) < ANALYSIS_MIN_WORDS || countTranscriptWords(scriptDraft) > SCRIPT_WORD_LIMIT}
                     onClick={analyzeScript}
                   >
                     Analyze
@@ -5100,39 +5147,48 @@ export default function SpeechBrigade() {
             <h1>Impromptu Speaking</h1>
             <RulesLink label="How it works" onOpen={() => openRules("impromptu")} />
             <div className="setup-corner">{practicePrivacyOptions}</div>
-            <div className="setup-step spin-screen">
-              <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
-              <TopicSpinner
-                key={themeReelKey}
-                items={themeNames}
-                onSpinStart={startThemeSpin}
-                onLand={landTheme}
-                useLabel="Use this theme"
-                landInitial
-                onUse={() => setSetupStage("topics")}
-                canUse={Boolean(round.impromptuTheme) && !themeSpinning}
-                showActions={setupStage === "spin"}
-              />
-            </div>
-            {setupStage !== "spin" ? (
-              <div className="setup-step spin-screen" ref={setupStage === "topics" ? latestSetupStepRef : undefined}>
-                <p className="eyebrow step-heading"><strong>Spin</strong> for a list of topics, and <strong>choose</strong> which to speak on</p>
-                <TopicSpinnerGroup
-                  count={3}
-                  items={impromptuThemeTopics}
-                  layout="row"
-                  onSpinStart={() => audio.unlock()}
-                  onLand={(topics) => setRound((current) => ({ ...current, topicOptions: topics }))}
-                  canSpin={round.topicOptions.length === 0}
-                  useLabel="Start planning"
-                  onUse={startPlanning}
-                  canUse={Boolean(round.selectedTopic)}
-                  selectedValue={lockedChoice}
-                  onSelect={chooseTopic}
-                  pickPrompt="Pick which of these 3 topics to speak on"
-                />
+            {topicSourceTabs}
+            {topicSource === "mine" ? (
+              <div className="setup-step spin-screen">
+                <MyTopics event="impromptu" onSpinStart={() => audio.unlock()} onUse={startMyTopic} />
               </div>
-            ) : null}
+            ) : (
+              <>
+                <div className="setup-step spin-screen">
+                  <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
+                  <TopicSpinner
+                    key={themeReelKey}
+                    items={themeNames}
+                    onSpinStart={startThemeSpin}
+                    onLand={landTheme}
+                    useLabel="Use this theme"
+                    landInitial
+                    onUse={() => setSetupStage("topics")}
+                    canUse={Boolean(round.impromptuTheme) && !themeSpinning}
+                    showActions={setupStage === "spin"}
+                  />
+                </div>
+                {setupStage !== "spin" ? (
+                  <div className="setup-step spin-screen" ref={setupStage === "topics" ? latestSetupStepRef : undefined}>
+                    <p className="eyebrow step-heading"><strong>Spin</strong> for a list of topics, and <strong>choose</strong> which to speak on</p>
+                    <TopicSpinnerGroup
+                      count={3}
+                      items={impromptuThemeTopics}
+                      layout="row"
+                      onSpinStart={() => audio.unlock()}
+                      onLand={(topics) => setRound((current) => ({ ...current, topicOptions: topics }))}
+                      canSpin={round.topicOptions.length === 0}
+                      useLabel="Start planning"
+                      onUse={startPlanning}
+                      canUse={Boolean(round.selectedTopic)}
+                      selectedValue={lockedChoice}
+                      onSelect={chooseTopic}
+                      pickPrompt="Pick which of these 3 topics to speak on"
+                    />
+                  </div>
+                ) : null}
+              </>
+            )}
           </section>
         );
       case "planSpeech":
@@ -5197,6 +5253,9 @@ export default function SpeechBrigade() {
           );
         }
         const reviewWords = countTranscriptWords(speechReview.transcript);
+        const reviewWordLimit = speechReview.mode === "impromptu" ? IMPROMPTU_WORD_LIMIT : null;
+        const reviewTooShort = speechAnalysisEnabled && reviewWords < ANALYSIS_MIN_WORDS;
+        const reviewTooLong = speechAnalysisEnabled && reviewWordLimit !== null && reviewWords > reviewWordLimit;
         return (
           <section className="reading review-speech">
             <h1>Review your speech</h1>
@@ -5234,7 +5293,15 @@ export default function SpeechBrigade() {
                       rows={10}
                     />
                   </label>
-                  <p className="word-count">{reviewWords.toLocaleString()} words · edit anything the transcript misheard</p>
+                  <p className={`word-count ${reviewTooShort || reviewTooLong ? "over" : ""}`}>
+                    {reviewWords.toLocaleString()}
+                    {reviewWordLimit ? ` / ${reviewWordLimit.toLocaleString()}` : ""} words ·{" "}
+                    {reviewTooShort
+                      ? `analysis needs at least ${ANALYSIS_MIN_WORDS} words`
+                      : reviewTooLong
+                        ? "shorten the transcript to analyze it"
+                        : "edit anything the transcript misheard"}
+                  </p>
                 </>
               )}
             </div>
@@ -5243,7 +5310,7 @@ export default function SpeechBrigade() {
               <button
                 className="primary"
                 type="button"
-                disabled={speechReview.transcriptStatus === "loading" || (speechReview.transcriptStatus === "ready" && speechAnalysisEnabled && !reviewWords)}
+                disabled={speechReview.transcriptStatus === "loading" || (speechReview.transcriptStatus === "ready" && (reviewTooShort || reviewTooLong))}
                 onClick={submitSpeechReview}
               >
                 {speechAnalysisEnabled ? "Analyze speech" : "Save recording"}
@@ -5281,38 +5348,45 @@ export default function SpeechBrigade() {
             <h1>Extemporaneous Speaking</h1>
             <RulesLink label="How it works" onOpen={() => openRules("extemp")} />
             <div className="setup-corner">{practicePrivacyOptions}</div>
-            <div className="setup-step spin-screen">
-              <div className="extemp-category-select">
-                <FilterSelect
-                  label="Question category"
-                  value={extempCategory}
-                  options={EXTEMP_CATEGORY_OPTIONS}
-                  onChange={(category) => {
-                    setExtempCategory(category);
-                    setLockedChoice("");
-                    setRound((current) => ({ ...current, questionOptions: [], selectedQuestion: null }));
+            {topicSourceTabs}
+            {topicSource === "mine" ? (
+              <div className="setup-step spin-screen">
+                <MyTopics event="extemp" onSpinStart={() => audio.unlock()} onUse={startMyTopic} />
+              </div>
+            ) : (
+              <div className="setup-step spin-screen">
+                <div className="extemp-category-select">
+                  <FilterSelect
+                    label="Question category"
+                    value={extempCategory}
+                    options={EXTEMP_CATEGORY_OPTIONS}
+                    onChange={(category) => {
+                      setExtempCategory(category);
+                      setLockedChoice("");
+                      setRound((current) => ({ ...current, questionOptions: [], selectedQuestion: null }));
+                    }}
+                  />
+                </div>
+                <TopicSpinnerGroup
+                  key={extempCategory}
+                  count={3}
+                  items={extempQuestionsFor(extempCategory).map((item) => item.question)}
+                  labels={round.questionOptions.map((question) => extempCardLabel(question.category, extempCategory))}
+                  onSpinStart={() => audio.unlock()}
+                  onLand={landQuestions}
+                  canSpin={round.questionOptions.length === 0}
+                  useLabel="Start planning"
+                  onUse={startPlanning}
+                  canUse={Boolean(round.selectedQuestion)}
+                  selectedValue={lockedChoice}
+                  onSelect={(text) => {
+                    const question = round.questionOptions.find((item) => item.question === text);
+                    if (question) chooseQuestion(question);
                   }}
+                  pickPrompt="Pick which of these 3 questions to speak on"
                 />
               </div>
-              <TopicSpinnerGroup
-                key={extempCategory}
-                count={3}
-                items={extempQuestionsFor(extempCategory).map((item) => item.question)}
-                labels={round.questionOptions.map((question) => extempCardLabel(question.category, extempCategory))}
-                onSpinStart={() => audio.unlock()}
-                onLand={landQuestions}
-                canSpin={round.questionOptions.length === 0}
-                useLabel="Start planning"
-                onUse={startPlanning}
-                canUse={Boolean(round.selectedQuestion)}
-                selectedValue={lockedChoice}
-                onSelect={(text) => {
-                  const question = round.questionOptions.find((item) => item.question === text);
-                  if (question) chooseQuestion(question);
-                }}
-                pickPrompt="Pick which of these 3 questions to speak on"
-              />
-            </div>
+            )}
           </section>
         );
       case "results":

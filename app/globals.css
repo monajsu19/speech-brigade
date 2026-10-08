@@ -5269,3 +5269,295 @@ h1 {
     font-size: 0.88rem;
   }
 }
+
+/* My Topic: topics people write themselves on the Impromptu and Extemp setup pages. */
+.topic-source-tabs {
+  justify-self: center;
+}
+
+.my-topics {
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.my-topics-new {
+  padding: 0.38rem 1rem;
+  border: 1px solid #135248;
+  border-radius: 999px;
+  background: #135248;
+  color: #f5f0e8;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.my-topics-new.small {
+  padding: 0.38rem 0.75rem;
+  font-weight: 600;
+}
+
+.my-topics-new:hover:not(:disabled) {
+  background: #1d6e5f;
+}
+
+.my-topics-new:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.my-topics .topic-spinner-card {
+  width: 100%;
+}
+
+.my-topics-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.my-topics-status.error {
+  color: var(--danger);
+}
+
+.my-topics-status .text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.my-topics-empty {
+  display: grid;
+  justify-items: center;
+  width: min(560px, 100%);
+  padding: 2.5rem;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--paper);
+  box-shadow: 0 2px 12px rgba(19, 82, 72, 0.08);
+  text-align: center;
+}
+
+.my-topics-empty h2 {
+  margin: 0 0 0.5rem;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.my-topics-empty p {
+  margin: 0 0 1.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.my-topics-backdrop {
+  background: rgba(245, 239, 227, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.my-topics-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(512px, 100%);
+  max-height: 85vh;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 2px 12px rgba(19, 82, 72, 0.08), 0 24px 60px rgba(20, 18, 12, 0.14);
+  color: var(--ink);
+  text-align: left;
+  animation: modalLift 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.my-topics-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.my-topics-modal-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.my-topics-close {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.my-topics-close:hover {
+  color: var(--ink);
+}
+
+.my-topics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.my-topics-count {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.my-topics-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.my-topics-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(245, 239, 227, 0.5);
+}
+
+.my-topics-list span {
+  flex: 1;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.my-topics-list button {
+  display: grid;
+  place-items: center;
+  padding: 0.375rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.my-topics-list button:hover {
+  background: var(--ivory);
+}
+
+.my-topics-list button.delete:hover {
+  color: var(--danger);
+}
+
+.my-topics-list-empty {
+  margin: 0;
+  padding: 2rem 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.my-topics-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.my-topics-form p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.my-topics-form textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--ivory);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  resize: none;
+}
+
+.my-topics-form textarea:focus {
+  border-color: rgba(19, 82, 72, 0.6);
+  outline: none;
+}
+
+.my-topics-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-style: italic;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.my-topics-form .my-topics-error {
+  color: var(--danger);
+}
+
+.my-topics-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.my-topics-actions button {
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.my-topics-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.my-topics-cancel {
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+}
+
+.my-topics-cancel:hover:not(:disabled) {
+  background: var(--ivory);
+}
+
+.my-topics-save {
+  border: 1px solid #135248;
+  background: #135248;
+  color: #f5f0e8;
+  font-weight: 600;
+}
+
+.my-topics-save:hover:not(:disabled) {
+  background: #1d6e5f;
+}
+
+.my-topics-delete {
+  border: 0;
+  background: #c24444;
+  color: #f5f0e8;
+  font-weight: 600;
+}
+
+.my-topics-delete:hover:not(:disabled) {
+  opacity: 0.9;
+}
