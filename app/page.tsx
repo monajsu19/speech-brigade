@@ -1304,24 +1304,31 @@ function useDialGeometry() {
 }
 
 // Dragging follows the pointer's angle around the center (DURATION_DIAL_SPEC.md, sections 1 and 5):
-// 12 o'clock is zero, values grow clockwise in 5 s steps, clamped to 15 s..scaleMax, no wrap-around.
+// 12 o'clock is zero, values grow clockwise in steps (5 s by default), clamped to one step (at least
+// 15 s)..scaleMax, no wrap-around.
 const DIAL_MIN_SECONDS = 15;
 const PREPARED_DURATION_PRESETS = [600, 420, 300];
 const EXTEMP_DURATION_PRESETS = [420, 300];
+const EXTEMP_PREP_PRESETS = [1800, 1320, 900];
 // Impromptu's plan and speak timers each drag up to 7 minutes (defaults: 2 to plan, 5 to speak).
 const IMPROMPTU_MAX_SECONDS = 420;
 const DIAL_STEP_SECONDS = 5;
+// Event timers (not the speaking games) set whole minutes, as in real rounds.
+const EVENT_DIAL_STEP_SECONDS = 60;
 
 function CountdownDial({
   remaining,
   total,
   scaleMax = total,
   onDrag,
+  step = DIAL_STEP_SECONDS,
 }: {
   remaining: number;
   total: number;
   // Seconds represented by one full turn of the ring.
   scaleMax?: number;
+  // Dragging snaps to this many seconds.
+  step?: number;
   // When set, dragging anywhere on the dial picks a new duration.
   onDrag?: (seconds: number) => void;
 }) {
@@ -1337,7 +1344,7 @@ function CountdownDial({
     let angleDeg = (Math.atan2(cy, cx) * 180) / Math.PI + 90;
     if (angleDeg < 0) angleDeg += 360;
     const raw = Math.round((angleDeg / 360) * scaleMax);
-    return Math.max(DIAL_MIN_SECONDS, Math.min(scaleMax, Math.round(raw / DIAL_STEP_SECONDS) * DIAL_STEP_SECONDS));
+    return Math.max(Math.max(DIAL_MIN_SECONDS, step), Math.min(scaleMax, Math.round(raw / step) * step));
   };
 
   const dragHandlers = onDrag
@@ -1406,6 +1413,7 @@ function TimerPanel({
   active = true,
   onStart,
   presets,
+  presetsAbove = false,
   onSecondsChange,
   maxSeconds,
   pausable = false,
@@ -1422,8 +1430,9 @@ function TimerPanel({
   // When inactive, the full time shows and the button starts the timer instead.
   active?: boolean;
   onStart?: () => void;
-  // Before Start: preset tabs under the dial, and dragging the dial sets any other length.
+  // Before Start: preset tabs under the dial (or above it), and dragging the dial sets any other length.
   presets?: number[];
+  presetsAbove?: boolean;
   onSecondsChange?: (seconds: number) => void;
   // Longest length the dial can be dragged to; defaults to the longest preset.
   maxSeconds?: number;
@@ -1446,6 +1455,23 @@ function TimerPanel({
     timerKey,
   });
 
+  const presetTabs =
+    !active && presets?.length && onSecondsChange ? (
+      <div className="duration-presets" role="group" aria-label="Speech length">
+        {presets.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            className={preset === seconds ? "active" : ""}
+            aria-pressed={preset === seconds}
+            onClick={() => onSecondsChange(preset)}
+          >
+            {preset / 60} min
+          </button>
+        ))}
+      </div>
+    ) : null;
+
   return (
     <section className="timer-stage">
       {topic ? (
@@ -1455,27 +1481,15 @@ function TimerPanel({
         </div>
       ) : null}
       <div className="timer-card">
-        {!active && presets?.length && onSecondsChange ? (
-          <div className="duration-presets" role="group" aria-label="Speech length">
-            {presets.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className={preset === seconds ? "active" : ""}
-                aria-pressed={preset === seconds}
-                onClick={() => onSecondsChange(preset)}
-              >
-                {preset / 60} min
-              </button>
-            ))}
-          </div>
-        ) : null}
+        {presetsAbove ? presetTabs : null}
         <CountdownDial
           remaining={active ? remaining : seconds}
           total={seconds}
-          scaleMax={maxSeconds ?? (presets?.length ? Math.max(seconds, ...presets) : seconds)}
+          scaleMax={active ? seconds : maxSeconds ?? (presets?.length ? Math.max(seconds, ...presets) : seconds)}
           onDrag={!active ? onSecondsChange : undefined}
+          step={EVENT_DIAL_STEP_SECONDS}
         />
+        {presetsAbove ? null : presetTabs}
         {pausable ? (
           <div className="timer-controls">
             <button
@@ -1526,12 +1540,12 @@ function GamePromptDisplay({ session, compact = false }: { session: SpeakingGame
       : session.gameId === "storyRelay"
         ? { label: "Opening line", text: session.openingLine }
         : session.gameId === "threeTwoOne"
-          ? { label: "Your argument", text: session.argument }
+          ? { label: null, text: session.argument }
           : null;
   if (textPrompt?.text) {
     return (
       <div className="topic-banner">
-        <span>{textPrompt.label}</span>
+        {textPrompt.label ? <span>{textPrompt.label}</span> : null}
         <strong>{textPrompt.text}</strong>
       </div>
     );
@@ -1620,6 +1634,7 @@ function GameTimer({
         key={`${config.id}-${roundIndex}`}
         label={round.label}
         seconds={session.roundSeconds?.[roundIndex] ?? round.seconds}
+        presets={config.id === "weighing" ? WEIGHING_DURATION_PRESETS : undefined}
         buttonLabel={isLast ? "I'm done" : config.id === "weighing" ? "Next speaker" : "Next round"}
         twists={session.gameId === "storyRelay" ? session.twists : undefined}
         started={started}
@@ -1632,9 +1647,13 @@ function GameTimer({
   );
 }
 
+// Which Is Worse: each speaker can take 3, 2, or 1 minute.
+const WEIGHING_DURATION_PRESETS = [180, 120, 60];
+
 function GameRoundTimer({
   label,
   seconds,
+  presets,
   buttonLabel,
   twists,
   started,
@@ -1645,6 +1664,8 @@ function GameRoundTimer({
 }: {
   label: string;
   seconds: number;
+  // Length tabs shown above the dial before Start.
+  presets?: number[];
   buttonLabel: string;
   // Story Relay: twists appear at 2:00, 1:00, and 0:30 remaining.
   twists?: string[];
@@ -1692,9 +1713,24 @@ function GameRoundTimer({
         <CountdownDial
           remaining={started ? remaining : duration}
           total={duration}
-          scaleMax={Math.max(180, seconds)}
+          scaleMax={started ? duration : Math.max(180, seconds)}
           onDrag={started ? undefined : setDuration}
         />
+        {!started && presets?.length ? (
+          <div className="duration-presets" role="group" aria-label="Speech length">
+            {presets.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className={preset === duration ? "active" : ""}
+                aria-pressed={preset === duration}
+                onClick={() => setDuration(preset)}
+              >
+                {preset / 60} min
+              </button>
+            ))}
+          </div>
+        ) : null}
         {started ? (
           <button className="secondary big-action" type="button" onClick={finishNow}>
             {buttonLabel}
@@ -3194,6 +3230,17 @@ export default function SpeechBrigade() {
   const [authEmail, setAuthEmail] = useState("");
   const [authStatus, setAuthStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [authError, setAuthError] = useState("");
+  // Passwords are the main way in; a magic link stays available for anyone without one.
+  const [authMethod, setAuthMethod] = useState<"password" | "magicLink">("password");
+  const [authMode, setAuthMode] = useState<"signIn" | "signUp">("signIn");
+  const [authPassword, setAuthPassword] = useState("");
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+  const [authSentKind, setAuthSentKind] = useState<"magicLink" | "confirm" | "reset">("magicLink");
+  const [authNeedsConfirm, setAuthNeedsConfirm] = useState(false);
+  // Shown on the main button while a reset or confirmation email sends, instead of "Signing in…".
+  const [authBusyLabel, setAuthBusyLabel] = useState("");
+  // Set when someone arrives from a password reset email, until they choose a new password.
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut" | "done">("idle");
   const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(true);
   const [saveRecordingEnabled, setSaveRecordingEnabled] = useState(
@@ -3274,10 +3321,19 @@ export default function SpeechBrigade() {
   useEffect(() => {
     if (!supabase) return undefined;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") {
+        setPasswordRecovery(true);
+        setAuthPassword("");
+        setAuthStatus("idle");
+        setAuthError("");
+        setScreen("signIn");
+      }
     });
     return () => subscription.subscription.unsubscribe();
+    // setScreen is stable; subscribing once is intended.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -3288,12 +3344,12 @@ export default function SpeechBrigade() {
       }, 0);
       return () => window.clearTimeout(id);
     }
-    if (screen === "signIn" && session) {
+    if (screen === "signIn" && session && !passwordRecovery) {
       const id = window.setTimeout(() => setScreen("settings"), 0);
       return () => window.clearTimeout(id);
     }
     return undefined;
-  }, [screen, session, setScreen, pendingAuthScreen]);
+  }, [screen, session, setScreen, pendingAuthScreen, passwordRecovery]);
 
   // Page sizes by offset: the first 10, the next 20, then everything else.
   const fetchVaultPage = useCallback(async (offset: number) => {
@@ -3700,11 +3756,137 @@ export default function SpeechBrigade() {
       },
     });
     if (error) {
-      setAuthStatus("error");
-      setAuthError(error.message);
+      showAuthError(friendlyAuthError(error.message));
       return;
     }
+    setAuthSentKind("magicLink");
     setAuthStatus("sent");
+  };
+
+  const authRedirectUrl = () => (typeof window !== "undefined" ? window.location.origin : undefined);
+
+  const showAuthError = (message: string) => {
+    setAuthStatus("error");
+    setAuthError(message);
+  };
+
+  // Supabase's messages are written for developers, so the common ones get plainer wording.
+  const friendlyAuthError = (message: string) => {
+    const lower = message.toLowerCase();
+    if (lower.includes("invalid login credentials")) return "That email and password don't match. If you've only signed in with Google or an email link before, use that, or choose Forgot password to set a password.";
+    if (lower.includes("rate limit")) return "Too many emails have been sent just now. Wait a few minutes and try again.";
+    return message;
+  };
+
+  const submitPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!supabase) {
+      showAuthError("Supabase is not configured for this local preview.");
+      return;
+    }
+    const email = authEmail.trim();
+    if (!email || !authPassword) return;
+    setAuthBusyLabel("");
+    setAuthStatus("sending");
+    setAuthError("");
+    setAuthNeedsConfirm(false);
+    if (authMode === "signIn") {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: authPassword });
+      if (error) {
+        if (error.message.toLowerCase().includes("email not confirmed")) {
+          setAuthNeedsConfirm(true);
+          showAuthError("Confirm your email first. Open the link we sent when you created your account.");
+          return;
+        }
+        showAuthError(friendlyAuthError(error.message));
+        return;
+      }
+      setAuthPassword("");
+      setAuthStatus("idle");
+      return;
+    }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: authPassword,
+      options: { emailRedirectTo: authRedirectUrl() },
+    });
+    if (error) {
+      showAuthError(friendlyAuthError(error.message));
+      return;
+    }
+    // Supabase answers a sign-up for an existing account with a user that has no identities.
+    if (data.user && data.user.identities?.length === 0) {
+      setAuthMode("signIn");
+      showAuthError("An account with this email already exists. Sign in with Google or an email link, or choose Forgot password to set a password.");
+      return;
+    }
+    setAuthPassword("");
+    if (data.session) {
+      setAuthStatus("idle");
+      return;
+    }
+    setAuthSentKind("confirm");
+    setAuthStatus("sent");
+  };
+
+  const resendConfirmation = async () => {
+    if (!supabase || !authEmail.trim()) return;
+    setAuthBusyLabel("Sending link…");
+    setAuthStatus("sending");
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: authEmail.trim(),
+      options: { emailRedirectTo: authRedirectUrl() },
+    });
+    if (error) {
+      showAuthError(friendlyAuthError(error.message));
+      return;
+    }
+    setAuthNeedsConfirm(false);
+    setAuthSentKind("confirm");
+    setAuthStatus("sent");
+  };
+
+  const sendPasswordReset = async () => {
+    if (!supabase) return;
+    const email = authEmail.trim();
+    if (!email) {
+      showAuthError("Enter your email above, then choose Forgot password.");
+      return;
+    }
+    setAuthBusyLabel("Sending link…");
+    setAuthStatus("sending");
+    setAuthError("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authRedirectUrl() });
+    if (error) {
+      showAuthError(friendlyAuthError(error.message));
+      return;
+    }
+    setAuthSentKind("reset");
+    setAuthStatus("sent");
+  };
+
+  const saveNewPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!supabase || !authPassword) return;
+    setAuthStatus("sending");
+    setAuthError("");
+    const { error } = await supabase.auth.updateUser({ password: authPassword });
+    if (error) {
+      showAuthError(friendlyAuthError(error.message));
+      return;
+    }
+    setAuthPassword("");
+    setAuthStatus("idle");
+    setPasswordRecovery(false);
+  };
+
+  const switchAuthMode = (mode: "signIn" | "signUp") => {
+    setAuthMode(mode);
+    setAuthMethod("password");
+    setAuthStatus("idle");
+    setAuthError("");
+    setAuthNeedsConfirm(false);
   };
 
   const signOut = async () => {
@@ -4597,17 +4779,19 @@ export default function SpeechBrigade() {
         })();
         return (
           <section className="reading event-setup">
-            <button type="button" className="back-link setup-back" onClick={goBack}>
-              ← Back
-            </button>
-            <h1 className="title-with-info">
-              {gameConfig.name}
-              <InfoTip label="How it works" className="title-tip">
-                {gameConfig.howItWorks.map((line, index) => (
-                  <span className="title-tip-line" key={`${gameConfig.id}-${index}`}>{line}</span>
-                ))}
-              </InfoTip>
-            </h1>
+            <div className="setup-title-row">
+              <button type="button" className="back-link setup-back" onClick={goBack}>
+                ← Back
+              </button>
+              <h1 className="title-with-info">
+                {gameConfig.name}
+                <InfoTip label="How it works" className="title-tip">
+                  {gameConfig.howItWorks.map((line, index) => (
+                    <span className="title-tip-line" key={`${gameConfig.id}-${index}`}>{line}</span>
+                  ))}
+                </InfoTip>
+              </h1>
+            </div>
             <div className="setup-step spin-screen">{setupStep}</div>
           </section>
         );
@@ -4648,26 +4832,35 @@ export default function SpeechBrigade() {
             </section>
           );
         }
+        const gamePrompt =
+          gameSession.question ||
+          gameSession.openingLine ||
+          gameSession.argument ||
+          gameSession.outline?.topic ||
+          (gameSession.words?.length ? gameSession.words.join(" · ") : "");
         return (
-          <section className="results">
-            <div className="summary-card">
-              <SummaryRow label="Game" value={gameConfig.name} />
-              {gameSession.question ? <SummaryRow label="Question" value={gameSession.question} /> : null}
-              {gameSession.words?.length ? <SummaryRow label="Words" value={gameSession.words.join(", ")} /> : null}
-              {gameSession.openingLine ? <SummaryRow label="Opening line" value={gameSession.openingLine} /> : null}
-              {gameSession.outline ? <SummaryRow label="Topic" value={gameSession.outline.topic} /> : null}
-              {gameSession.argument ? <SummaryRow label="Argument" value={gameSession.argument} /> : null}
-              {gameSession.scenarios?.map((scenario, index) => (
-                <SummaryRow key={scenario} label={`Speaker ${index + 1} defended`} value={scenario} />
-              ))}
+          <section className="results game-results">
+            <h1>{gameConfig.name}</h1>
+            {gamePrompt ? <p className="game-results-prompt">{gamePrompt}</p> : null}
+            <dl className={`game-results-rounds ${gameConfig.id === "threeTwoOne" ? "tiered" : ""}`}>
               {gameConfig.rounds.map((round, index) => (
-                <SummaryRow
-                  key={round.label}
-                  label={gameConfig.rounds.length > 1 ? round.label : "Time used"}
-                  value={`${formatTime(gameSession.roundElapsedSeconds?.[index] || 0)} of ${formatTime(gameSession.roundSeconds?.[index] ?? round.seconds)}`}
-                />
+                <div className={`game-results-round tier-${index}`} key={round.label}>
+                  <dt>
+                    {gameConfig.id === "threeTwoOne"
+                      ? `Round ${index + 1}`
+                      : gameConfig.id === "weighing" && gameSession.scenarios?.[index]
+                        ? `${round.label}: ${gameSession.scenarios[index]}`
+                        : gameConfig.rounds.length > 1
+                          ? round.label
+                          : "Time used"}
+                  </dt>
+                  <dd>
+                    {formatTime(gameSession.roundElapsedSeconds?.[index] || 0)}
+                    <small> of {formatTime(gameSession.roundSeconds?.[index] ?? round.seconds)}</small>
+                  </dd>
+                </div>
               ))}
-            </div>
+            </dl>
             <div className="button-row">
               <button className="primary" type="button" onClick={retrySpeakingGame}>Practice Again</button>
               <button className="secondary" type="button" onClick={() => setScreen("gamesSelection")}>Back to Games</button>
@@ -4766,11 +4959,13 @@ export default function SpeechBrigade() {
         }
         return (
           <section className="reading event-setup speech-workspace prepared-setup">
-            <button type="button" className="back-link setup-back" onClick={goBack}>
-              ← Back
-            </button>
             <div className="setup-corner">{practicePrivacyOptions}</div>
-            <h1>{selectedPreparedEvent.name}</h1>
+            <div className="setup-title-row">
+              <button type="button" className="back-link setup-back" onClick={goBack}>
+                ← Back
+              </button>
+              <h1>{selectedPreparedEvent.name}</h1>
+            </div>
             <RulesLink label="Rules" onOpen={() => openRules(selectedPreparedEvent.id)} />
             <div className="input-mode-tabs" role="tablist" aria-label="How to practice">
               {([
@@ -4944,15 +5139,47 @@ export default function SpeechBrigade() {
             </button>
           </section>
         );
-      case "signIn":
+      case "signIn": {
+        const passwordToggle = (
+          <button
+            type="button"
+            className="auth-password-toggle"
+            onClick={() => setShowAuthPassword((shown) => !shown)}
+            aria-label={showAuthPassword ? "Hide password" : "Show password"}
+          >
+            {showAuthPassword ? "Hide" : "Show"}
+          </button>
+        );
+        const sentCopy = {
+          magicLink: {
+            lede: "We sent you a sign-in link.",
+            body: <>Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here, signed in.</>,
+          },
+          confirm: {
+            lede: "One more step to create your account.",
+            body: <>We sent a confirmation link to <strong>{authEmail}</strong>. Open it to finish creating your account, and it will bring you right back here, signed in. If it isn&apos;t there in a minute, check your spam folder.</>,
+          },
+          reset: {
+            lede: "We sent you a link to reset your password.",
+            body: <>Check <strong>{authEmail}</strong> for a link to reset your password. Opening it brings you back here to choose a new one.</>,
+          },
+        }[authSentKind];
         return (
           <section className="narrow auth-screen sign-in-screen">
             <h1 className="sign-in-heading">
               {!isSupabaseConfigured ? (
                 "Practice mode is available"
+              ) : passwordRecovery ? (
+                <>
+                  Set a new <em>password</em>
+                </>
               ) : authStatus === "sent" ? (
                 <>
                   Check your <em>email</em>
+                </>
+              ) : authMode === "signUp" ? (
+                <>
+                  Create your <em>account</em>
                 </>
               ) : (
                 <>
@@ -4963,22 +5190,45 @@ export default function SpeechBrigade() {
             <p className="lede">
               {!isSupabaseConfigured
                 ? "Add Supabase environment variables to enable sign-in, saved recordings, transcription, and speech analysis."
-                : authStatus === "sent"
-                  ? "We sent you a sign-in link."
-                  : "Sign in to continue your challenge."}
+                : passwordRecovery
+                  ? "Choose a new password for your account."
+                  : authStatus === "sent"
+                    ? sentCopy.lede
+                    : authMode === "signUp"
+                      ? "Sign up to save your practice and get feedback on your speeches."
+                      : "Sign in to continue your challenge."}
             </p>
             {!isSupabaseConfigured ? (
               <button className="primary" type="button" onClick={() => setScreen("events")}>
                 Continue to Events
               </button>
+            ) : passwordRecovery ? (
+              <form className="auth-form" onSubmit={saveNewPassword}>
+                <div className="auth-field">
+                  <label htmlFor="auth-new-password">New password</label>
+                  <div className="auth-password-input">
+                    <input
+                      id="auth-new-password"
+                      type={showAuthPassword ? "text" : "password"}
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      value={authPassword}
+                      onChange={(event) => setAuthPassword(event.target.value)}
+                    />
+                    {passwordToggle}
+                  </div>
+                </div>
+                <button className="auth-primary-button" type="submit" disabled={authStatus === "sending"}>
+                  {authStatus === "sending" ? "Saving…" : "Save new password"}
+                </button>
+                {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
+              </form>
             ) : authStatus === "sent" ? (
               <div className="auth-sent">
-                <p>
-                  Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here,
-                  signed in.
-                </p>
+                <p>{sentCopy.body}</p>
                 <button className="secondary" type="button" onClick={() => setAuthStatus("idle")}>
-                  Use a different email
+                  {authSentKind === "confirm" ? "Back to sign in" : "Use a different email"}
                 </button>
               </div>
             ) : (
@@ -5007,30 +5257,114 @@ export default function SpeechBrigade() {
                 <div className="auth-divider">
                   <span>or</span>
                 </div>
-                <form className="auth-form" onSubmit={sendMagicLink}>
+                <form className="auth-form" onSubmit={authMethod === "password" ? submitPassword : sendMagicLink}>
                   <div className="auth-field">
                     <label htmlFor="auth-email">Email</label>
                     <input
                       id="auth-email"
                       type="email"
                       required
+                      autoComplete="email"
                       placeholder="you@example.com"
                       value={authEmail}
                       onChange={(event) => setAuthEmail(event.target.value)}
                     />
                   </div>
+                  {authMethod === "password" ? (
+                    <div className="auth-field">
+                      <label htmlFor="auth-password">Password</label>
+                      <div className="auth-password-input">
+                        <input
+                          id="auth-password"
+                          type={showAuthPassword ? "text" : "password"}
+                          required
+                          minLength={authMode === "signUp" ? 6 : undefined}
+                          autoComplete={authMode === "signUp" ? "new-password" : "current-password"}
+                          placeholder={authMode === "signUp" ? "At least 6 characters" : undefined}
+                          value={authPassword}
+                          onChange={(event) => setAuthPassword(event.target.value)}
+                        />
+                        {passwordToggle}
+                      </div>
+                    </div>
+                  ) : null}
                   <button className="auth-primary-button" type="submit" disabled={authStatus === "sending"}>
-                    {authStatus === "sending" ? "Sending…" : "Email me a magic link"}
+                    {authStatus === "sending"
+                      ? authBusyLabel
+                        ? authBusyLabel
+                        : authMethod === "magicLink"
+                          ? "Sending…"
+                          : authMode === "signUp"
+                            ? "Creating account…"
+                            : "Signing in…"
+                      : authMethod === "magicLink"
+                        ? "Email me a magic link"
+                        : authMode === "signUp"
+                          ? "Create account"
+                          : "Sign in"}
                   </button>
+                  {authMethod === "password" && authMode === "signIn" ? (
+                    <button
+                      type="button"
+                      className="auth-text-button auth-forgot"
+                      onClick={sendPasswordReset}
+                      disabled={authStatus === "sending"}
+                    >
+                      Forgot password?
+                    </button>
+                  ) : null}
                   {authStatus === "error" ? <p className="auth-error">{authError}</p> : null}
+                  {authNeedsConfirm ? (
+                    <button type="button" className="auth-text-button" onClick={resendConfirmation}>
+                      Resend confirmation email
+                    </button>
+                  ) : null}
                 </form>
+                <div className="auth-switches">
+                  {authMethod === "magicLink" ? (
+                    <button type="button" className="auth-text-button" onClick={() => switchAuthMode("signIn")}>
+                      Use a password instead
+                    </button>
+                  ) : authMode === "signIn" ? (
+                    <p>
+                      New here?{" "}
+                      <button type="button" className="auth-text-button" onClick={() => switchAuthMode("signUp")}>
+                        Create an account
+                      </button>
+                    </p>
+                  ) : (
+                    <p>
+                      Already have an account?{" "}
+                      <button type="button" className="auth-text-button" onClick={() => switchAuthMode("signIn")}>
+                        Sign in
+                      </button>
+                    </p>
+                  )}
+                  {authMethod === "password" ? (
+                    <button
+                      type="button"
+                      className="auth-text-button muted"
+                      onClick={() => {
+                        setAuthMethod("magicLink");
+                        setAuthStatus("idle");
+                        setAuthError("");
+                        setAuthNeedsConfirm(false);
+                      }}
+                    >
+                      Email me a sign-in link instead
+                    </button>
+                  ) : null}
+                </div>
               </>
             )}
-            <button className="secondary" type="button" onClick={goBack}>
-              Back
-            </button>
+            {passwordRecovery ? null : (
+              <button className="secondary" type="button" onClick={goBack}>
+                Back
+              </button>
+            )}
           </section>
         );
+      }
       case "settings":
         return (
           <section className="narrow auth-screen">
@@ -5141,10 +5475,12 @@ export default function SpeechBrigade() {
       case "impromptuIntro":
         return (
           <section className="reading event-setup">
-            <button type="button" className="back-link setup-back" onClick={goBack}>
-              ← Back
-            </button>
-            <h1>Impromptu Speaking</h1>
+            <div className="setup-title-row">
+              <button type="button" className="back-link setup-back" onClick={goBack}>
+                ← Back
+              </button>
+              <h1>Impromptu Speaking</h1>
+            </div>
             <RulesLink label="How it works" onOpen={() => openRules("impromptu")} />
             <div className="setup-corner">{practicePrivacyOptions}</div>
             {topicSourceTabs}
@@ -5195,13 +5531,11 @@ export default function SpeechBrigade() {
         return (
           <section className="delivery-layout round-timer-page">
             <TimerPanel
-              seconds={round.mode === "extemp" ? 1800 : round.prepSecondsAllocated}
+              seconds={round.prepSecondsAllocated}
+              presets={round.mode === "extemp" ? EXTEMP_PREP_PRESETS : undefined}
+              presetsAbove
               maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
-              onSecondsChange={
-                round.mode === "impromptu"
-                  ? (seconds) => setRound((current) => ({ ...current, prepSecondsAllocated: seconds }))
-                  : undefined
-              }
+              onSecondsChange={(seconds) => setRound((current) => ({ ...current, prepSecondsAllocated: seconds }))}
               buttonLabel="I'm ready to speak"
               topic={selectedPrompt}
               topicLabel="Plan your speech"
@@ -5258,13 +5592,10 @@ export default function SpeechBrigade() {
         const reviewTooLong = speechAnalysisEnabled && reviewWordLimit !== null && reviewWords > reviewWordLimit;
         return (
           <section className="reading review-speech">
-            <h1>Review your speech</h1>
-            {speechReview.topic ? (
-              <div className="topic-banner">
-                <span>{`Your ${speechReview.topic.endsWith("?") ? "question" : "topic"}`}</span>
-                <strong>{speechReview.topic}</strong>
-              </div>
-            ) : null}
+            <div className="topic-banner">
+              <span>Review your speech</span>
+              {speechReview.topic ? <strong>{speechReview.topic}</strong> : null}
+            </div>
             <AudioPlayer src={speechReview.audioUrl} />
             <div className="review-transcript">
               {speechReview.transcriptStatus === "idle" ? (
@@ -5342,10 +5673,12 @@ export default function SpeechBrigade() {
       case "extempIntro":
         return (
           <section className="reading event-setup">
-            <button type="button" className="back-link setup-back" onClick={goBack}>
-              ← Back
-            </button>
-            <h1>Extemporaneous Speaking</h1>
+            <div className="setup-title-row">
+              <button type="button" className="back-link setup-back" onClick={goBack}>
+                ← Back
+              </button>
+              <h1>Extemporaneous Speaking</h1>
+            </div>
             <RulesLink label="How it works" onOpen={() => openRules("extemp")} />
             <div className="setup-corner">{practicePrivacyOptions}</div>
             {topicSourceTabs}
@@ -5567,9 +5900,13 @@ export default function SpeechBrigade() {
         ref={creatorButtonRef}
         className="creator-float"
         onClick={() => setFoundersOpen(true)}
-        aria-label="Learn about Speech Brigade's founders"
+        aria-label="Meet Speech Brigade's founders"
       >
-        <span className="creator-copy">Learn About Speech Brigade&apos;s Founders</span>
+        <span className="creator-faces" aria-hidden="true">
+          <Image unoptimized src="/founders/jd-hopper-founder.png" alt="" width={64} height={64} />
+          <Image unoptimized src="/founders/mona-su.jpg" alt="" width={64} height={64} />
+        </span>
+        <span className="creator-copy">Meet the founders →</span>
       </button>
       ) : null}
       {screen === "landing" ? (
