@@ -202,26 +202,25 @@ input:focus-visible {
   padding-bottom: clamp(0.5rem, 1.6vw, 1.2rem);
 }
 
+/* Founders link: a small pill with both founders' photos overlapping, then the label. */
 .creator-float {
   appearance: none;
   position: relative;
   display: inline-flex;
   align-items: center;
   max-width: min(36rem, calc(100vw - 1.8rem));
-  gap: 0.5rem;
+  gap: 0.6rem;
   width: fit-content;
   margin: auto auto 0;
-  padding: 0.82rem 1rem 0.9rem;
-  border: 1px solid rgba(201, 164, 91, 0.48);
-  border-radius: 18px;
-  background:
-    linear-gradient(145deg, rgba(255, 252, 244, 0.9), rgba(235, 216, 170, 0.82)),
-    var(--paper);
-  box-shadow: 0 18px 60px rgba(20, 18, 12, 0.2);
+  padding: 0.3rem 1rem 0.3rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 0 10px 30px rgba(20, 18, 12, 0.1);
   color: var(--ink);
   cursor: pointer;
-  font-size: 0.86rem;
-  font-weight: 780;
+  font-size: 0.82rem;
+  font-weight: 700;
   line-height: 1.18;
   text-decoration: none;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
@@ -231,6 +230,22 @@ input:focus-visible {
   display: inline;
 }
 
+.creator-faces {
+  display: inline-flex;
+}
+
+.creator-faces img {
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.creator-faces img + img {
+  margin-left: -0.55rem;
+}
+
 .creator-float u {
   text-decoration-color: var(--gold);
   text-decoration-thickness: 2px;
@@ -238,9 +253,9 @@ input:focus-visible {
 }
 
 .creator-float:hover {
-  transform: translateY(-3px);
-  border-color: rgba(201, 164, 91, 0.78);
-  box-shadow: 0 24px 78px rgba(20, 18, 12, 0.25);
+  transform: translateY(-2px);
+  border-color: rgba(24, 26, 31, 0.28);
+  box-shadow: 0 14px 36px rgba(20, 18, 12, 0.14);
 }
 
 .creator-float:active {
@@ -1445,7 +1460,8 @@ h1 {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.5rem;
-  margin: 0;
+  /* Room between the round tabs and the prompt below them. */
+  margin: 0 0 1.5rem;
   padding: 0;
   list-style: none;
 }
@@ -2256,15 +2272,8 @@ h1 {
   }
 
   .creator-float {
-    display: flex;
-    justify-content: center;
-    width: min(100%, 28rem);
-    max-width: none;
     margin-top: 0.95rem;
-    padding: 0.82rem 1rem;
-    border-radius: 16px;
     font-size: 0.78rem;
-    text-align: center;
   }
 
   .tip-float {
@@ -4999,10 +5008,27 @@ h1 {
 }
 
 /* First page of each event: a small Back link in the top left instead of a Back button. */
+/* Back sits on the title's row, at the left; the right column balances it so the title stays centered. */
+.setup-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.setup-title-row h1 {
+  grid-column: 2;
+  margin: 0;
+}
+
 .setup-back {
-  width: 100%;
-  margin: 0 0 clamp(0.6rem, 2vw, 1.2rem);
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  width: auto;
+  margin: 0;
   text-align: left;
+  white-space: nowrap;
 }
 
 /* Game titles carry their How it works note on an "i" beside the name. */
@@ -5268,4 +5294,419 @@ h1 {
   .tab-pager-step {
     font-size: 0.88rem;
   }
+}
+
+/* Game results: name as the title, the prompt under it, then each round's time without a card.
+   3-2-1 rounds step down in size like the rounds themselves. */
+.game-results-prompt {
+  max-width: 40rem;
+  margin: 0.8rem auto 0;
+  color: rgba(24, 26, 31, 0.72);
+  font-family: var(--display);
+  font-size: clamp(1.1rem, 2.4vw, 1.4rem);
+  line-height: 1.35;
+}
+
+.game-results-rounds {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.9rem 2rem;
+  margin: clamp(1.6rem, 4vw, 2.4rem) auto 0;
+}
+
+.game-results-round {
+  display: contents;
+}
+
+.game-results-round dt {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 650;
+  text-align: left;
+  max-width: 22rem;
+}
+
+.game-results-round dd {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.game-results-round dd small {
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.5em;
+}
+
+.game-results-rounds.tiered .tier-0 dt { font-size: 1.25rem; }
+.game-results-rounds.tiered .tier-0 dd { font-size: 2.6rem; }
+.game-results-rounds.tiered .tier-1 dt { font-size: 1rem; }
+.game-results-rounds.tiered .tier-1 dd { font-size: 1.9rem; }
+.game-results-rounds.tiered .tier-2 dt { font-size: 0.82rem; }
+.game-results-rounds.tiered .tier-2 dd { font-size: 1.35rem; }
+
+/* My Topic: topics people write themselves on the Impromptu and Extemp setup pages. */
+.topic-source-tabs {
+  justify-self: center;
+}
+
+.my-topics {
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.my-topics-new {
+  padding: 0.38rem 1rem;
+  border: 1px solid #135248;
+  border-radius: 999px;
+  background: #135248;
+  color: #f5f0e8;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.my-topics-new.small {
+  padding: 0.38rem 0.75rem;
+  font-weight: 600;
+}
+
+.my-topics-new:hover:not(:disabled) {
+  background: #1d6e5f;
+}
+
+.my-topics-new:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.my-topics .topic-spinner-card {
+  width: 100%;
+}
+
+.my-topics-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.my-topics-status.error {
+  color: var(--danger);
+}
+
+.my-topics-status .text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.my-topics-empty {
+  display: grid;
+  justify-items: center;
+  width: min(560px, 100%);
+  padding: 2.5rem;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--paper);
+  box-shadow: 0 2px 12px rgba(19, 82, 72, 0.08);
+  text-align: center;
+}
+
+.my-topics-empty h2 {
+  margin: 0 0 0.5rem;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.my-topics-empty p {
+  margin: 0 0 1.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.my-topics-backdrop {
+  background: rgba(245, 239, 227, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.my-topics-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(512px, 100%);
+  max-height: 85vh;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 0 2px 12px rgba(19, 82, 72, 0.08), 0 24px 60px rgba(20, 18, 12, 0.14);
+  color: var(--ink);
+  text-align: left;
+  animation: modalLift 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.my-topics-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.my-topics-modal-head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.my-topics-close {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.my-topics-close:hover {
+  color: var(--ink);
+}
+
+.my-topics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.my-topics-count {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.my-topics-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.my-topics-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(245, 239, 227, 0.5);
+}
+
+.my-topics-list span {
+  flex: 1;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.my-topics-list button {
+  display: grid;
+  place-items: center;
+  padding: 0.375rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.my-topics-list button:hover {
+  background: var(--ivory);
+}
+
+.my-topics-list button.delete:hover {
+  color: var(--danger);
+}
+
+.my-topics-list-empty {
+  margin: 0;
+  padding: 2rem 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.my-topics-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.my-topics-form p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.my-topics-form textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--ivory);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  resize: none;
+}
+
+.my-topics-form textarea:focus {
+  border-color: rgba(19, 82, 72, 0.6);
+  outline: none;
+}
+
+.my-topics-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-style: italic;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.my-topics-form .my-topics-error {
+  color: var(--danger);
+}
+
+.my-topics-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.my-topics-actions button {
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.my-topics-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.my-topics-cancel {
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+}
+
+.my-topics-cancel:hover:not(:disabled) {
+  background: var(--ivory);
+}
+
+.my-topics-save {
+  border: 1px solid #135248;
+  background: #135248;
+  color: #f5f0e8;
+  font-weight: 600;
+}
+
+.my-topics-save:hover:not(:disabled) {
+  background: #1d6e5f;
+}
+
+.my-topics-delete {
+  border: 0;
+  background: #c24444;
+  color: #f5f0e8;
+  font-weight: 600;
+}
+
+/* Password sign-in: show/hide toggle, Forgot password, and the sign-up / magic link switches. */
+.auth-forgot {
+  justify-self: center;
+}
+
+.auth-password-input {
+  position: relative;
+}
+
+.auth-password-input input {
+  width: 100%;
+  padding-right: 4.5rem;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.9rem;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.auth-password-toggle:hover {
+  color: var(--ink);
+}
+
+.auth-text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.auth-text-button.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.auth-text-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth-switches {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}
+
+.auth-switches p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.my-topics-delete:hover:not(:disabled) {
+  opacity: 0.9;
 }
