@@ -164,6 +164,15 @@ input:focus-visible {
   border: 1px solid currentColor;
   border-radius: 999px;
   line-height: 1.15;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+@media (hover: hover) {
+  .home-button:hover {
+    border-color: var(--gold);
+    background: var(--gold);
+    color: var(--paper);
+  }
 }
 
 .header-actions {
@@ -2514,6 +2523,16 @@ h1 {
   text-align: center;
 }
 
+/* Typing fields drop the ring drawn around buttons. Clicking into one shows nothing; reaching
+   it with Tab (html[data-keyboard], set in page.tsx) marks it with its own border. */
+.auth-form input:focus-visible {
+  outline: none;
+}
+
+html[data-keyboard] .auth-form input:focus-visible {
+  border-color: var(--gold);
+}
+
 .auth-error {
   margin: 0;
   color: var(--danger);
@@ -3947,10 +3966,6 @@ h1 {
   color: var(--danger);
 }
 
-.sign-out-success {
-  color: var(--ink);
-}
-
 .sign-out-confirm + .secondary {
   margin-top: 1.1rem;
 }
@@ -5192,12 +5207,6 @@ h1 {
   font-size: 0.5em;
 }
 
-.game-results-rounds.tiered .tier-0 dt { font-size: 1.25rem; }
-.game-results-rounds.tiered .tier-0 dd { font-size: 2.6rem; }
-.game-results-rounds.tiered .tier-1 dt { font-size: 1rem; }
-.game-results-rounds.tiered .tier-1 dd { font-size: 1.9rem; }
-.game-results-rounds.tiered .tier-2 dt { font-size: 0.82rem; }
-.game-results-rounds.tiered .tier-2 dd { font-size: 1.35rem; }
 
 /* My Topic: topics people write themselves on the Impromptu and Extemp setup pages. */
 .topic-source-tabs {
@@ -5600,5 +5609,110 @@ h1 {
 .home-footer-tip:hover,
 .home-footer-founders:hover {
   text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* Privacy and Terms links: their own small line under the tip and founders links. */
+.home-footer-legal {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.home-footer-legal a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 0.25rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.home-footer-legal a:hover {
+  text-decoration: underline;
+}
+
+/* Privacy Policy and Terms of Service pages. */
+.legal-page {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: clamp(1.5rem, 5vw, 3.5rem) 16px 4rem;
+  box-sizing: border-box;
+  color: var(--ink);
+  line-height: 1.65;
+}
+
+.legal-back {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.legal-back:hover {
+  color: var(--ink);
+}
+
+.legal-header {
+  margin: 1.5rem 0 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.legal-header h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(2.2rem, 6vw, 3.2rem);
+  font-weight: 500;
+  line-height: 1.05;
+}
+
+.legal-subtitle {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.legal-updated {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.legal-body section {
+  margin-bottom: 2rem;
+}
+
+.legal-body h2 {
+  margin: 0 0 0.6rem;
+  font-family: var(--display);
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.legal-body h3 {
+  margin: 1.1rem 0 0.3rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.legal-body p {
+  margin: 0 0 0.8rem;
+}
+
+.legal-body ul {
+  margin: 0 0 0.8rem;
+  padding-left: 1.3rem;
+}
+
+.legal-body li {
+  margin-bottom: 0.35rem;
+}
+
+.legal-body a {
+  color: var(--ink);
   text-underline-offset: 0.2em;
 }

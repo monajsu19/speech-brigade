@@ -1132,7 +1132,7 @@ async function extractPdfText(file: File) {
 
 async function extractScriptText(file: File) {
   const name = file.name.toLowerCase();
-  if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".rtf")) {
+  if (name.endsWith(".txt")) {
     return file.text();
   }
   if (name.endsWith(".docx")) {
@@ -1143,7 +1143,7 @@ async function extractScriptText(file: File) {
   if (name.endsWith(".pdf")) {
     return extractPdfText(file);
   }
-  throw new Error("Please upload a PDF, DOCX, TXT, MD, or RTF file.");
+  throw new Error("Please upload a PDF, DOCX, or TXT file.");
 }
 
 function useAudio() {
@@ -3317,7 +3317,7 @@ export default function SpeechBrigade() {
   const [authBusyLabel, setAuthBusyLabel] = useState("");
   // Set when someone arrives from a password reset email, until they choose a new password.
   const [passwordRecovery, setPasswordRecovery] = useState(false);
-  const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut" | "done">("idle");
+  const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut">("idle");
   const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(true);
   const [saveRecordingEnabled, setSaveRecordingEnabled] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("speech-brigade-save-recording") === "true",
@@ -3966,11 +3966,34 @@ export default function SpeechBrigade() {
     setAuthNeedsConfirm(false);
   };
 
+  // Browsers treat a clicked text field as keyboard focus, so the page tracks whether Tab or the
+  // pointer was used last and the sign-in fields only mark focus after Tab.
+  useEffect(() => {
+    const root = document.documentElement;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Tab") root.dataset.keyboard = "";
+    };
+    const onPointerDown = () => {
+      delete root.dataset.keyboard;
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, []);
+
   const signOut = async () => {
     if (!supabase) return;
     setSignOutStatus("signingOut");
     const { error } = await supabase.auth.signOut();
-    setSignOutStatus(error ? "confirming" : "done");
+    if (error) {
+      setSignOutStatus("confirming");
+      return;
+    }
+    setSignOutStatus("idle");
+    goHome();
   };
 
   const signInWithGoogle = async () => {
@@ -4921,9 +4944,9 @@ export default function SpeechBrigade() {
           <section className="results game-results">
             <h1>{gameConfig.name}</h1>
             {gamePrompt ? <p className="game-results-prompt">{gamePrompt}</p> : null}
-            <dl className={`game-results-rounds ${gameConfig.id === "threeTwoOne" ? "tiered" : ""}`}>
+            <dl className="game-results-rounds">
               {gameConfig.rounds.map((round, index) => (
-                <div className={`game-results-round tier-${index}`} key={round.label}>
+                <div className="game-results-round" key={round.label}>
                   <dt>
                     {gameConfig.id === "threeTwoOne"
                       ? `Round ${index + 1}`
@@ -5093,7 +5116,7 @@ export default function SpeechBrigade() {
                   ref={scriptInputRef}
                   className="visually-hidden"
                   type="file"
-                  accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                   onChange={handleScriptFileChange}
                 />
                 <button className="script-upload-card" type="button" onClick={() => scriptInputRef.current?.click()}>
@@ -5102,7 +5125,7 @@ export default function SpeechBrigade() {
                   <span>
                     {preparedScript?.status === "ready"
                       ? "Click to choose a different file."
-                      : "PDF, DOCX, TXT, MD, and RTF files are supported."}
+                      : "PDF, DOCX, and TXT files are supported."}
                   </span>
                 </button>
                 {scriptUploadStatus ? <p className="script-status">{scriptUploadStatus}</p> : null}
@@ -5412,11 +5435,6 @@ export default function SpeechBrigade() {
                 </div>
               </>
             )}
-            {passwordRecovery ? null : (
-              <button className="secondary" type="button" onClick={goBack}>
-                Back
-              </button>
-            )}
           </section>
         );
       }
@@ -5441,14 +5459,14 @@ export default function SpeechBrigade() {
                   <p>{session.user.app_metadata?.provider === "google" ? "Google" : "Email"}</p>
                 </div>
               </div>
-            ) : signOutStatus === "done" ? (
-              <p className="lede sign-out-success">You&apos;ve successfully signed out.</p>
             ) : (
               <p className="lede">You&apos;re not signed in.</p>
             )}
-            <button className="secondary" type="button" onClick={goBack}>
-              Back
-            </button>
+            {!session ? (
+              <button className="secondary" type="button" onClick={goHome}>
+                Back to Home
+              </button>
+            ) : null}
             {isSupabaseConfigured && session ? (
               signOutStatus === "confirming" || signOutStatus === "signingOut" ? (
                 <div className="sign-out-confirm" role="group" aria-label="Confirm sign out">
@@ -5967,6 +5985,11 @@ export default function SpeechBrigade() {
           <button className="home-footer-founders" type="button" onClick={() => setFoundersOpen(true)}>
             Meet the founders
           </button>
+          <span className="home-footer-legal">
+            <a href="/privacy/">Privacy</a>
+            <span aria-hidden="true">·</span>
+            <a href="/terms/">Terms</a>
+          </span>
         </footer>
       ) : null}
       {infoModal ? (
