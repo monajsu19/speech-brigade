@@ -17,7 +17,7 @@ const SPIN_ICON = (
 const isPhoneWidth = () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
 
 // Card outline, reel accent, and spin button color for sides that need telling apart.
-const TONE_ACCENTS = { blue: "#1f4f8f", green: "#135248" } as const;
+const TONE_ACCENTS = { blue: "#18206f", green: "#9e2a2b" } as const;
 type SpinnerTone = keyof typeof TONE_ACCENTS;
 
 function SpinnerActions({
@@ -97,7 +97,7 @@ export function TopicSpinner({
       windowHeight: isPhoneWidth() ? 216 : 330,
       fontSize: isPhoneWidth() ? "0.85rem" : "0.95rem",
       color: "#000000",
-      accent: "#135248",
+      accent: "#9e2a2b",
       onLand: (item) => onLandRef.current(item),
     });
     spinnerRef.current = spinner;

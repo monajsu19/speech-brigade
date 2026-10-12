@@ -17,8 +17,8 @@ const DEFAULTS = {
   fontFamily: "'Playfair Display', Georgia, serif",
   fontSize: '1.75rem',
   color: '#1A3C34',
-  accent: '#135248',
-  knobColor: '#135248',
+  accent: '#9e2a2b',
+  knobColor: '#9e2a2b',
   showLever: false,
   showButton: false,
   buttonLabel: 'Spin!',
@@ -71,8 +71,8 @@ function injectCSS(accent) {
   left: 50%;
   transform: translate(-50%, -50%);
   width: 92%;
-  border-top: 1px solid rgba(19, 82, 72, 0.15);
-  border-bottom: 1px solid rgba(19, 82, 72, 0.15);
+  border-top: 1px solid rgba(158, 42, 43, 0.15);
+  border-bottom: 1px solid rgba(158, 42, 43, 0.15);
   pointer-events: none;
   z-index: 2;
 }

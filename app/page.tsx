@@ -1196,6 +1196,34 @@ function useAudio() {
 	      window.setTimeout(() => playTone(320, 0.08, "triangle", 0.016), 46);
 	    },
 	    countdown: (final = false) => playTone(final ? 280 : 440, final ? 0.18 : 0.09, "sine", final ? 0.05 : 0.035),
+	    // Time's up: a desk bell struck twice, like a tournament timekeeper. Each strike layers a bell's
+	    // out-of-tune overtones, the higher ones fading faster, over a long natural ring-out.
+	    bell: () => {
+	      const ctx = getContext();
+	      if (!ctx) return;
+	      const strike = (start: number) => {
+	        [
+	          { ratio: 1, gain: 0.07, decay: 1.6 },
+	          { ratio: 2.76, gain: 0.032, decay: 0.9 },
+	          { ratio: 5.4, gain: 0.016, decay: 0.5 },
+	          { ratio: 8.93, gain: 0.007, decay: 0.3 },
+	        ].forEach(({ ratio, gain, decay }) => {
+	          const oscillator = ctx.createOscillator();
+	          const volume = ctx.createGain();
+	          oscillator.type = "sine";
+	          oscillator.frequency.setValueAtTime(880 * ratio, start);
+	          volume.gain.setValueAtTime(0.0001, start);
+	          volume.gain.exponentialRampToValueAtTime(gain, start + 0.004);
+	          volume.gain.exponentialRampToValueAtTime(0.0001, start + decay);
+	          oscillator.connect(volume);
+	          volume.connect(ctx.destination);
+	          oscillator.start(start);
+	          oscillator.stop(start + decay + 0.05);
+	        });
+	      };
+	      strike(ctx.currentTime);
+	      strike(ctx.currentTime + 0.32);
+	    },
 	  };
 	}
 
@@ -1270,11 +1298,8 @@ function useCountdownTimer({
   }, [active, paused, seconds, timerKey]);
 
   const finishNow = () => {
-    // Screens that stay put when time runs out still need their button to move on.
-    if (completedRef.current) {
-      if (remaining <= 0) onCompleteRef.current(seconds, "manual");
-      return;
-    }
+    // Time already ran out and moved the page on, so a late press does nothing.
+    if (completedRef.current) return;
     completedRef.current = true;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     const running = runningRef.current ? (performance.now() - startRef.current) / 1000 : 0;
@@ -1345,8 +1370,12 @@ const DIAL_MIN_SECONDS = 15;
 const PREPARED_DURATION_PRESETS = [600, 420, 300];
 const EXTEMP_DURATION_PRESETS = [420, 300];
 const EXTEMP_PREP_PRESETS = [1800, 1320, 900];
-// Impromptu's plan and speak timers each drag up to 7 minutes (defaults: 2 to plan, 5 to speak).
+// Impromptu rounds get 7 minutes in all, split in half-minute steps between prep and speaking.
+// Each side keeps at least half a minute, so both timers always have something to count.
 const IMPROMPTU_MAX_SECONDS = 420;
+const IMPROMPTU_PREP_MIN_SECONDS = 30;
+const IMPROMPTU_PREP_MAX_SECONDS = 390;
+const IMPROMPTU_SPLIT_STEP_SECONDS = 30;
 const DIAL_STEP_SECONDS = 5;
 // Event timers (not the speaking games) set whole minutes, as in real rounds.
 const EVENT_DIAL_STEP_SECONDS = 60;
@@ -1418,14 +1447,14 @@ function CountdownDial({
           cx={dial.center}
           cy={dial.center}
           r={dial.radius}
-          stroke="#135248"
+          stroke="#9e2a2b"
           strokeWidth={dial.strokeWidth}
           fill="none"
           strokeLinecap="round"
           strokeDasharray={dashArray}
           transform={`rotate(-90 ${dial.center} ${dial.center})`}
         />
-        <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleOuterR} fill="#135248" />
+        <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleOuterR} fill="#9e2a2b" />
         <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleInnerR} fill="#FFFFFF" />
         <text x={dial.center} y={dial.center + 2} textAnchor="middle" fontSize={dial.bigFontSize} fontWeight="700" fill="#1E1E1E">
           {formatDuration(left)}
@@ -1450,7 +1479,6 @@ function TimerPanel({
   presets,
   presetsAbove = false,
   onSecondsChange,
-  maxSeconds,
   pausable = false,
   recording = false,
   onPauseChange,
@@ -1469,8 +1497,6 @@ function TimerPanel({
   presets?: number[];
   presetsAbove?: boolean;
   onSecondsChange?: (seconds: number) => void;
-  // Longest length the dial can be dragged to; defaults to the longest preset.
-  maxSeconds?: number;
   // Pause/Resume and Stop buttons, greyed out until Start. Stop finishes the speech like running out
   // of time and pressing on, so the page moves to its review step. The Stop dot pulses while recording.
   pausable?: boolean;
@@ -1520,7 +1546,7 @@ function TimerPanel({
         <CountdownDial
           remaining={active ? remaining : seconds}
           total={seconds}
-          scaleMax={active ? seconds : maxSeconds ?? (presets?.length ? Math.max(seconds, ...presets) : seconds)}
+          scaleMax={active ? seconds : presets?.length ? Math.max(seconds, ...presets) : seconds}
           onDrag={!active ? onSecondsChange : undefined}
           step={EVENT_DIAL_STEP_SECONDS}
         />
@@ -1536,11 +1562,7 @@ function TimerPanel({
                 onPauseChange?.(!paused);
               }}
             >
-              {paused ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" /></svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1" /><rect x="14" y="4.5" width="4" height="15" rx="1" /></svg>
-              )}
+              {paused ? RESUME_ICON : PAUSE_ICON}
               {paused ? "Resume" : "Pause"}
             </button>
             <button
@@ -1564,6 +1586,238 @@ function TimerPanel({
           </button>
         ) : null}
       </div>
+    </section>
+  );
+}
+
+const PAUSE_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1" /><rect x="14" y="4.5" width="4" height="15" rx="1" /></svg>
+);
+const RESUME_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" /></svg>
+);
+
+const SPLIT_RING_RADIUS = 44;
+const SPLIT_RING_LENGTH = 2 * Math.PI * SPLIT_RING_RADIUS;
+
+// One of the two rings on Impromptu's timer page. Before a stage runs, its arc is its share of
+// the 7 minutes; once it is counting down, the arc starts as a full circle and drains.
+function SplitTimerRing({
+  tone,
+  label,
+  seconds,
+  total,
+  live,
+}: {
+  tone: "prep" | "speak";
+  label: string;
+  seconds: number;
+  // Seconds a full circle stands for.
+  total: number;
+  live: boolean;
+}) {
+  const shown = formatDuration(Math.ceil(Math.max(0, seconds)));
+  return (
+    <div className={`split-timer-card ${tone} ${live ? "live" : ""}`}>
+      <span className="split-timer-label">{label}</span>
+      <div className="split-timer-ring" role={live ? "timer" : undefined} aria-label={`${shown} ${tone === "prep" ? "to prep" : "to speak"}`}>
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle className="track" cx="50" cy="50" r={SPLIT_RING_RADIUS} />
+          {seconds > 0 ? (
+            <circle
+              className="arc"
+              cx="50"
+              cy="50"
+              r={SPLIT_RING_RADIUS}
+              strokeDasharray={`${Math.min(1, seconds / total) * SPLIT_RING_LENGTH} ${SPLIT_RING_LENGTH}`}
+            />
+          ) : null}
+        </svg>
+        <strong>{shown}</strong>
+      </div>
+    </div>
+  );
+}
+
+// "speakReady" is a redo: prep is over and the speak timer waits for Start.
+type SplitTimerPhase = "setup" | "prep" | "speakReady" | "speak";
+
+// Impromptu's whole round on one page: one bar splits the 7 minutes, then the prep and speak
+// rings count down in turn, speaking starting by itself when prep runs out.
+function SplitRoundTimer({
+  topic,
+  phase,
+  prepSeconds,
+  speakSeconds,
+  onPrepSecondsChange,
+  onStart,
+  onPrepComplete,
+  onSpeakComplete,
+  onWarningSecond,
+  recording,
+  onPauseChange,
+}: {
+  topic: string;
+  phase: SplitTimerPhase;
+  prepSeconds: number;
+  speakSeconds: number;
+  onPrepSecondsChange: (seconds: number) => void;
+  onStart: () => void;
+  onPrepComplete: (elapsed: number, completion: CompletionStatus) => void;
+  onSpeakComplete: (elapsed: number, completion: CompletionStatus) => void;
+  onWarningSecond: (second: number) => void;
+  recording: boolean;
+  // Pausing the speak timer also pauses the recording.
+  onPauseChange: (paused: boolean) => void;
+}) {
+  // Pause belongs to one stage: moving on to the next clears it.
+  const [pausedPhase, setPausedPhase] = useState<SplitTimerPhase | null>(null);
+  const paused = pausedPhase === phase;
+  const prep = useCountdownTimer({
+    seconds: prepSeconds,
+    active: phase === "prep",
+    paused,
+    onComplete: onPrepComplete,
+    onWarningSecond,
+    timerKey: `impromptu-prep-${topic}`,
+  });
+  const speak = useCountdownTimer({
+    seconds: speakSeconds,
+    active: phase === "speak",
+    paused,
+    onComplete: onSpeakComplete,
+    onWarningSecond,
+    timerKey: `impromptu-speak-${topic}`,
+  });
+
+  const splitSteps = IMPROMPTU_MAX_SECONDS / IMPROMPTU_SPLIT_STEP_SECONDS;
+  const clampPrep = (seconds: number) =>
+    Math.min(IMPROMPTU_PREP_MAX_SECONDS, Math.max(IMPROMPTU_PREP_MIN_SECONDS, seconds));
+  // Clicking or dragging anywhere on the bar puts the split at the nearest allowed half minute.
+  const draggingRef = useRef(false);
+  const moveSplitTo = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const raw = ((event.clientX - rect.left) / rect.width) * IMPROMPTU_MAX_SECONDS;
+    const next = clampPrep(Math.round(raw / IMPROMPTU_SPLIT_STEP_SECONDS) * IMPROMPTU_SPLIT_STEP_SECONDS);
+    if (next !== prepSeconds) onPrepSecondsChange(next);
+  };
+  const splitPointerHandlers =
+    phase === "setup"
+      ? {
+          onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            draggingRef.current = true;
+            moveSplitTo(event);
+          },
+          onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+            if (draggingRef.current) moveSplitTo(event);
+          },
+          onPointerUp: () => {
+            draggingRef.current = false;
+          },
+          onPointerCancel: () => {
+            draggingRef.current = false;
+          },
+        }
+      : {};
+  const prepShown = phase === "setup" ? prepSeconds : phase === "prep" ? Math.min(prep.remaining, prepSeconds) : 0;
+  const speakShown = phase === "speak" ? Math.min(speak.remaining, speakSeconds) : speakSeconds;
+  const togglePause = () => {
+    setPausedPhase(paused ? null : phase);
+    if (phase === "speak") onPauseChange(!paused);
+  };
+  const pauseButton = (
+    <button className="timer-control" type="button" onClick={togglePause}>
+      {paused ? RESUME_ICON : PAUSE_ICON}
+      {paused ? "Resume" : "Pause"}
+    </button>
+  );
+
+  return (
+    <section className="timer-stage split-timer">
+      <div className="topic-banner">
+        <span>{phase === "setup" ? "Your topic" : phase === "prep" ? "Plan your speech" : "Record your speech"}</span>
+        <strong>{topic}</strong>
+      </div>
+      <div className={`split-bar ${phase === "setup" ? "" : "locked"}`}>
+        <div className="split-bar-heading">
+          <span className="prep">{formatDuration(prepSeconds)} prep</span>
+          <strong>Split your 7 minutes</strong>
+          <span className="speak">{formatDuration(speakSeconds)} speak</span>
+        </div>
+        <div className="split-bar-track" {...splitPointerHandlers}>
+          <div className="split-bar-fill" aria-hidden="true">
+            <span className="prep" style={{ flexGrow: prepSeconds }} />
+            <span className="speak" style={{ flexGrow: speakSeconds }} />
+          </div>
+          <span
+            className="split-bar-knob"
+            aria-hidden="true"
+            style={{ left: `calc((100% - 8px) * ${prepSeconds / IMPROMPTU_MAX_SECONDS} + 4px)` }}
+          />
+          {phase === "setup" ? (
+            <>
+              {/* A line at every half minute, each one a place the split can stop. */}
+              <div className="split-bar-ticks" aria-hidden="true">
+                {Array.from({ length: splitSteps - 1 }, (_, index) => (
+                  <span key={index} style={{ left: `${((index + 1) / splitSteps) * 100}%` }} />
+                ))}
+              </div>
+              {/* The pointer is handled by the track; this slider is for the keyboard and screen readers. */}
+              <input
+                type="range"
+                min={0}
+                max={IMPROMPTU_MAX_SECONDS}
+                step={IMPROMPTU_SPLIT_STEP_SECONDS}
+                value={prepSeconds}
+                aria-label="Prep time"
+                aria-valuetext={`${formatDuration(prepSeconds)} to prep, ${formatDuration(speakSeconds)} to speak`}
+                onChange={(event) => onPrepSecondsChange(clampPrep(Number(event.target.value)))}
+              />
+            </>
+          ) : null}
+        </div>
+      </div>
+      <div className="split-timer-cards">
+        <SplitTimerRing
+          tone="prep"
+          label="1 · Prep"
+          seconds={prepShown}
+          total={phase === "prep" ? prepSeconds : IMPROMPTU_MAX_SECONDS}
+          live={phase === "prep"}
+        />
+        <div className="split-timer-then" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          <span>then</span>
+        </div>
+        <SplitTimerRing
+          tone="speak"
+          label="2 · Speak"
+          seconds={speakShown}
+          total={phase === "speak" ? speakSeconds : IMPROMPTU_MAX_SECONDS}
+          live={phase === "speak"}
+        />
+      </div>
+      {phase === "setup" || phase === "speakReady" ? (
+        <button className="primary big-action" type="button" onClick={onStart}>
+          {phase === "setup" ? "Start prep" : "Start speaking"}
+        </button>
+      ) : phase === "prep" ? (
+        <div className="timer-controls">
+          {pauseButton}
+          <button className="timer-control" type="button" onClick={prep.finishNow}>
+            Speak now
+          </button>
+        </div>
+      ) : (
+        <div className="timer-controls">
+          {pauseButton}
+          <button className={`timer-control stop ${recording && !paused ? "live" : ""}`} type="button" onClick={speak.finishNow}>
+            <span className="record-dot" aria-hidden="true" />
+            Stop
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -1715,11 +1969,8 @@ function GameRoundTimer({
   const { remaining, finishNow } = useCountdownTimer({
     seconds: duration,
     active: started,
-    // Running out of time stays on the round; the button moves on.
-    onComplete: (elapsed, completion) => {
-      if (completion === "expired") return;
-      onComplete(elapsed, duration);
-    },
+    // Running out of time moves on, the same as the button.
+    onComplete: (elapsed) => onComplete(elapsed, duration),
     onWarningSecond,
     timerKey: label,
   });
@@ -4452,19 +4703,18 @@ export default function SpeechBrigade() {
     </div>
   );
 
-  // Running out of prep time stays on the page; "I'm ready to speak" moves on.
+  // Running out of prep time rolls straight into delivery with its timer already going. So does
+  // Impromptu's "Speak now"; Extemp's "I'm ready to speak" moves on early and waits for Start.
   const handlePrepComplete = (elapsed: number, completion: CompletionStatus) => {
     setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
-    if (completion === "expired") return;
-    setRoundTimerStarted(false);
+    if (completion !== "expired" && round.mode !== "impromptu") setRoundTimerStarted(false);
     setScreen("recordSpeech");
   };
 
-	  // Running out of delivery time stays on the page; Stop moves on to the review page.
+	  // Running out of delivery time ends the recording and moves on to the review page, like Stop.
 	  const handleDeliveryComplete = (elapsed: number, completion: CompletionStatus) => {
 	    const roundedElapsed = Math.round(elapsed);
 	    setRound((current) => ({ ...current, deliverySecondsUsed: roundedElapsed }));
-	    if (completion === "expired") return;
 	    const mode = round.mode;
     if (!mode) {
       setScreen("results");
@@ -4634,9 +4884,9 @@ export default function SpeechBrigade() {
     });
   };
 
-  // Running out of time stays on the page; Stop moves on to the review page.
+  // Running out of time ends the recording and moves on to the review page, like Stop.
   const handlePreparedPerformanceComplete = (elapsed: number, completion: CompletionStatus) => {
-    if (!selectedPreparedEventId || completion === "expired") return;
+    if (!selectedPreparedEventId) return;
     const roundedElapsed = Math.round(elapsed);
     const baseResult = preparedBaseResult(selectedPreparedEventId, roundedElapsed, completion);
 
@@ -4671,9 +4921,50 @@ export default function SpeechBrigade() {
     });
   };
 
-  const warningTone = (second: number) => audio.countdown(second === 0);
+  // Dings for the last five seconds, then a double bell at zero as the page moves on.
+  const warningTone = (second: number) => (second === 0 ? audio.bell() : audio.countdown());
 
   const selectedPrompt = round.mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
+  // Impromptu plans and speaks on one page, shared by the planSpeech and recordSpeech screens.
+  const impromptuPrepSeconds = Math.min(
+    IMPROMPTU_PREP_MAX_SECONDS,
+    Math.max(
+      IMPROMPTU_PREP_MIN_SECONDS,
+      Math.round(round.prepSecondsAllocated / IMPROMPTU_SPLIT_STEP_SECONDS) * IMPROMPTU_SPLIT_STEP_SECONDS,
+    ),
+  );
+  const setImpromptuSplit = (prepSeconds: number) =>
+    setRound((current) => ({
+      ...current,
+      prepSecondsAllocated: prepSeconds,
+      deliverySecondsAllocated: IMPROMPTU_MAX_SECONDS - prepSeconds,
+    }));
+  const impromptuTimerPage = (
+    <section className="delivery-layout round-timer-page">
+      {screen === "recordSpeech" && roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
+        <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+      ) : null}
+      <SplitRoundTimer
+        topic={selectedPrompt}
+        phase={
+          screen === "planSpeech" ? (roundTimerStarted ? "prep" : "setup") : roundTimerStarted ? "speak" : "speakReady"
+        }
+        prepSeconds={impromptuPrepSeconds}
+        speakSeconds={IMPROMPTU_MAX_SECONDS - impromptuPrepSeconds}
+        onPrepSecondsChange={setImpromptuSplit}
+        onStart={() => {
+          audio.unlock();
+          setImpromptuSplit(impromptuPrepSeconds);
+          setRoundTimerStarted(true);
+        }}
+        onPrepComplete={handlePrepComplete}
+        onSpeakComplete={handleDeliveryComplete}
+        onWarningSecond={warningTone}
+        recording={isRecordingAudio}
+        onPauseChange={pauseRecording}
+      />
+    </section>
+  );
   const impromptuThemeTopics = (themeBank.find((item) => item.theme === round.impromptuTheme) || themeBank[0]).topics;
   const playInteractionSoundForTarget = (target: HTMLElement | null) => {
     if (!target?.closest("button:not(:disabled), a[href]")) return;
@@ -5601,13 +5892,13 @@ export default function SpeechBrigade() {
           </section>
         );
       case "planSpeech":
+        if (round.mode === "impromptu") return impromptuTimerPage;
         return (
           <section className="delivery-layout round-timer-page">
             <TimerPanel
               seconds={round.prepSecondsAllocated}
               presets={round.mode === "extemp" ? EXTEMP_PREP_PRESETS : undefined}
               presetsAbove
-              maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
               onSecondsChange={(seconds) => setRound((current) => ({ ...current, prepSecondsAllocated: seconds }))}
               buttonLabel="I'm ready to speak"
               topic={selectedPrompt}
@@ -5624,6 +5915,7 @@ export default function SpeechBrigade() {
           </section>
         );
       case "recordSpeech":
+        if (round.mode === "impromptu") return impromptuTimerPage;
         return (
           <section className="delivery-layout round-timer-page">
             {roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
@@ -5632,7 +5924,6 @@ export default function SpeechBrigade() {
             <TimerPanel
               seconds={round.deliverySecondsAllocated}
               presets={round.mode === "extemp" ? EXTEMP_DURATION_PRESETS : undefined}
-              maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
               onSecondsChange={(seconds) => setRound((current) => ({ ...current, deliverySecondsAllocated: seconds }))}
               pausable
               recording={isRecordingAudio}
@@ -5963,7 +6254,7 @@ export default function SpeechBrigade() {
 	          )}
 	        </nav>
 	      </header>
-      <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={screen}>
+      <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={round.mode === "impromptu" && (screen === "planSpeech" || screen === "recordSpeech") ? "impromptuRound" : screen}>
         {content}
       </div>
       {screen === "landing" ? (
