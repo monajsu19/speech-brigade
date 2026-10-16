@@ -19,7 +19,6 @@ type Screen =
   | "gameSetup"
   | "gameRounds"
   | "gameResults"
-  | "eventsAuth"
   | "events"
   | "preparedEventIntro"
   | "preparedResults"
@@ -46,13 +45,21 @@ const RECORDING_TOO_LARGE_MESSAGE = "Congrats! You spoke so much we can't handle
 // browser history entry, so going back skips over them to the last screen the user chose.
 const TRANSIENT_SCREENS = new Set<Screen>([
   "gameRounds",
-  "eventsAuth",
   "signIn",
   "planSpeech",
   "recordSpeech",
   "reviewSpeech",
   "analyzing",
 ]);
+
+// Where Back goes when the browser history can't be trusted to hold the previous screen.
+const PARENT_SCREENS: Partial<Record<Screen, Screen>> = {
+  impromptuIntro: "events",
+  extempIntro: "events",
+  preparedEventIntro: "events",
+  gameSetup: "gamesSelection",
+  rulesDetail: "rules",
+};
 
 // Reloading mid-event returns to that event's first page, so the open event is kept per tab.
 const OPEN_EVENT_STORAGE_KEY = "speech-brigade-open-event";
@@ -62,8 +69,12 @@ const NON_EVENT_SCREENS = new Set<Screen>(["landing", "events", "gamesSelection"
 // Production runs on the Next.js app router, which reloads the page on Back when a history entry
 // lacks its own markers (__NA and its route tree). This page's first replaceState runs before the
 // router patches history to copy them, so carry over whatever router state the entry already has.
-function withRouterHistoryState(state: { screen: Screen; key: string }) {
-  return { ...(window.history.state ?? {}), ...state };
+// The router's saved scroll position is left out: copied onto another screen's entry, it would
+// scroll that screen to where the previous one was when Back or Forward returns to it.
+function withRouterHistoryState(state: { screen: Screen; key: string; from?: Screen }) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { __vinext_scrollX, __vinext_scrollY, ...routerState } = window.history.state ?? {};
+  return { ...routerState, ...state };
 }
 
 function readOpenEvent() {
@@ -80,6 +91,30 @@ function writeOpenEvent(value: string) {
     else window.sessionStorage.removeItem(OPEN_EVENT_STORAGE_KEY);
   } catch {
     // Without storage, a reload simply starts at the homepage.
+  }
+}
+
+// Opening an event while signed out goes to sign in first. Google sign-in and email links reload the
+// page, so the event waits here (per tab, for a while) and reopens once the person is signed in.
+const PENDING_SIGN_IN_EVENT_KEY = "speech-brigade-pending-sign-in-event";
+const PENDING_SIGN_IN_EVENT_MS = 30 * 60 * 1000;
+
+function readPendingSignInEvent() {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(PENDING_SIGN_IN_EVENT_KEY) || "null") as { event?: string; at?: number } | null;
+    if (!saved?.event || !saved.at || Date.now() - saved.at > PENDING_SIGN_IN_EVENT_MS) return "";
+    return saved.event;
+  } catch {
+    return "";
+  }
+}
+
+function writePendingSignInEvent(event: string) {
+  try {
+    if (event) window.sessionStorage.setItem(PENDING_SIGN_IN_EVENT_KEY, JSON.stringify({ event, at: Date.now() }));
+    else window.sessionStorage.removeItem(PENDING_SIGN_IN_EVENT_KEY);
+  } catch {
+    // Without storage, signing in through a redirect lands on the homepage.
   }
 }
 
@@ -1097,7 +1132,7 @@ async function extractPdfText(file: File) {
 
 async function extractScriptText(file: File) {
   const name = file.name.toLowerCase();
-  if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".rtf")) {
+  if (name.endsWith(".txt")) {
     return file.text();
   }
   if (name.endsWith(".docx")) {
@@ -1108,7 +1143,7 @@ async function extractScriptText(file: File) {
   if (name.endsWith(".pdf")) {
     return extractPdfText(file);
   }
-  throw new Error("Please upload a PDF, DOCX, TXT, MD, or RTF file.");
+  throw new Error("Please upload a PDF, DOCX, or TXT file.");
 }
 
 function useAudio() {
@@ -1161,6 +1196,34 @@ function useAudio() {
 	      window.setTimeout(() => playTone(320, 0.08, "triangle", 0.016), 46);
 	    },
 	    countdown: (final = false) => playTone(final ? 280 : 440, final ? 0.18 : 0.09, "sine", final ? 0.05 : 0.035),
+	    // Time's up: a desk bell struck twice, like a tournament timekeeper. Each strike layers a bell's
+	    // out-of-tune overtones, the higher ones fading faster, over a long natural ring-out.
+	    bell: () => {
+	      const ctx = getContext();
+	      if (!ctx) return;
+	      const strike = (start: number) => {
+	        [
+	          { ratio: 1, gain: 0.07, decay: 1.6 },
+	          { ratio: 2.76, gain: 0.032, decay: 0.9 },
+	          { ratio: 5.4, gain: 0.016, decay: 0.5 },
+	          { ratio: 8.93, gain: 0.007, decay: 0.3 },
+	        ].forEach(({ ratio, gain, decay }) => {
+	          const oscillator = ctx.createOscillator();
+	          const volume = ctx.createGain();
+	          oscillator.type = "sine";
+	          oscillator.frequency.setValueAtTime(880 * ratio, start);
+	          volume.gain.setValueAtTime(0.0001, start);
+	          volume.gain.exponentialRampToValueAtTime(gain, start + 0.004);
+	          volume.gain.exponentialRampToValueAtTime(0.0001, start + decay);
+	          oscillator.connect(volume);
+	          volume.connect(ctx.destination);
+	          oscillator.start(start);
+	          oscillator.stop(start + decay + 0.05);
+	        });
+	      };
+	      strike(ctx.currentTime);
+	      strike(ctx.currentTime + 0.32);
+	    },
 	  };
 	}
 
@@ -1235,11 +1298,8 @@ function useCountdownTimer({
   }, [active, paused, seconds, timerKey]);
 
   const finishNow = () => {
-    // Screens that stay put when time runs out still need their button to move on.
-    if (completedRef.current) {
-      if (remaining <= 0) onCompleteRef.current(seconds, "manual");
-      return;
-    }
+    // Time already ran out and moved the page on, so a late press does nothing.
+    if (completedRef.current) return;
     completedRef.current = true;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     const running = runningRef.current ? (performance.now() - startRef.current) / 1000 : 0;
@@ -1310,8 +1370,12 @@ const DIAL_MIN_SECONDS = 15;
 const PREPARED_DURATION_PRESETS = [600, 420, 300];
 const EXTEMP_DURATION_PRESETS = [420, 300];
 const EXTEMP_PREP_PRESETS = [1800, 1320, 900];
-// Impromptu's plan and speak timers each drag up to 7 minutes (defaults: 2 to plan, 5 to speak).
+// Impromptu rounds get 7 minutes in all, split in half-minute steps between prep and speaking.
+// Each side keeps at least half a minute, so both timers always have something to count.
 const IMPROMPTU_MAX_SECONDS = 420;
+const IMPROMPTU_PREP_MIN_SECONDS = 30;
+const IMPROMPTU_PREP_MAX_SECONDS = 390;
+const IMPROMPTU_SPLIT_STEP_SECONDS = 30;
 const DIAL_STEP_SECONDS = 5;
 // Event timers (not the speaking games) set whole minutes, as in real rounds.
 const EVENT_DIAL_STEP_SECONDS = 60;
@@ -1383,14 +1447,14 @@ function CountdownDial({
           cx={dial.center}
           cy={dial.center}
           r={dial.radius}
-          stroke="#135248"
+          stroke="#9e2a2b"
           strokeWidth={dial.strokeWidth}
           fill="none"
           strokeLinecap="round"
           strokeDasharray={dashArray}
           transform={`rotate(-90 ${dial.center} ${dial.center})`}
         />
-        <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleOuterR} fill="#135248" />
+        <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleOuterR} fill="#9e2a2b" />
         <circle cx={handlePos.x} cy={handlePos.y} r={dial.handleInnerR} fill="#FFFFFF" />
         <text x={dial.center} y={dial.center + 2} textAnchor="middle" fontSize={dial.bigFontSize} fontWeight="700" fill="#1E1E1E">
           {formatDuration(left)}
@@ -1415,7 +1479,6 @@ function TimerPanel({
   presets,
   presetsAbove = false,
   onSecondsChange,
-  maxSeconds,
   pausable = false,
   recording = false,
   onPauseChange,
@@ -1434,8 +1497,6 @@ function TimerPanel({
   presets?: number[];
   presetsAbove?: boolean;
   onSecondsChange?: (seconds: number) => void;
-  // Longest length the dial can be dragged to; defaults to the longest preset.
-  maxSeconds?: number;
   // Pause/Resume and Stop buttons, greyed out until Start. Stop finishes the speech like running out
   // of time and pressing on, so the page moves to its review step. The Stop dot pulses while recording.
   pausable?: boolean;
@@ -1485,7 +1546,7 @@ function TimerPanel({
         <CountdownDial
           remaining={active ? remaining : seconds}
           total={seconds}
-          scaleMax={active ? seconds : maxSeconds ?? (presets?.length ? Math.max(seconds, ...presets) : seconds)}
+          scaleMax={active ? seconds : presets?.length ? Math.max(seconds, ...presets) : seconds}
           onDrag={!active ? onSecondsChange : undefined}
           step={EVENT_DIAL_STEP_SECONDS}
         />
@@ -1501,11 +1562,7 @@ function TimerPanel({
                 onPauseChange?.(!paused);
               }}
             >
-              {paused ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" /></svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1" /><rect x="14" y="4.5" width="4" height="15" rx="1" /></svg>
-              )}
+              {paused ? RESUME_ICON : PAUSE_ICON}
               {paused ? "Resume" : "Pause"}
             </button>
             <button
@@ -1529,6 +1586,238 @@ function TimerPanel({
           </button>
         ) : null}
       </div>
+    </section>
+  );
+}
+
+const PAUSE_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1" /><rect x="14" y="4.5" width="4" height="15" rx="1" /></svg>
+);
+const RESUME_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" /></svg>
+);
+
+const SPLIT_RING_RADIUS = 44;
+const SPLIT_RING_LENGTH = 2 * Math.PI * SPLIT_RING_RADIUS;
+
+// One of the two rings on Impromptu's timer page. Before a stage runs, its arc is its share of
+// the 7 minutes; once it is counting down, the arc starts as a full circle and drains.
+function SplitTimerRing({
+  tone,
+  label,
+  seconds,
+  total,
+  live,
+}: {
+  tone: "prep" | "speak";
+  label: string;
+  seconds: number;
+  // Seconds a full circle stands for.
+  total: number;
+  live: boolean;
+}) {
+  const shown = formatDuration(Math.ceil(Math.max(0, seconds)));
+  return (
+    <div className={`split-timer-card ${tone} ${live ? "live" : ""}`}>
+      <span className="split-timer-label">{label}</span>
+      <div className="split-timer-ring" role={live ? "timer" : undefined} aria-label={`${shown} ${tone === "prep" ? "to prep" : "to speak"}`}>
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle className="track" cx="50" cy="50" r={SPLIT_RING_RADIUS} />
+          {seconds > 0 ? (
+            <circle
+              className="arc"
+              cx="50"
+              cy="50"
+              r={SPLIT_RING_RADIUS}
+              strokeDasharray={`${Math.min(1, seconds / total) * SPLIT_RING_LENGTH} ${SPLIT_RING_LENGTH}`}
+            />
+          ) : null}
+        </svg>
+        <strong>{shown}</strong>
+      </div>
+    </div>
+  );
+}
+
+// "speakReady" is a redo: prep is over and the speak timer waits for Start.
+type SplitTimerPhase = "setup" | "prep" | "speakReady" | "speak";
+
+// Impromptu's whole round on one page: one bar splits the 7 minutes, then the prep and speak
+// rings count down in turn, speaking starting by itself when prep runs out.
+function SplitRoundTimer({
+  topic,
+  phase,
+  prepSeconds,
+  speakSeconds,
+  onPrepSecondsChange,
+  onStart,
+  onPrepComplete,
+  onSpeakComplete,
+  onWarningSecond,
+  recording,
+  onPauseChange,
+}: {
+  topic: string;
+  phase: SplitTimerPhase;
+  prepSeconds: number;
+  speakSeconds: number;
+  onPrepSecondsChange: (seconds: number) => void;
+  onStart: () => void;
+  onPrepComplete: (elapsed: number, completion: CompletionStatus) => void;
+  onSpeakComplete: (elapsed: number, completion: CompletionStatus) => void;
+  onWarningSecond: (second: number) => void;
+  recording: boolean;
+  // Pausing the speak timer also pauses the recording.
+  onPauseChange: (paused: boolean) => void;
+}) {
+  // Pause belongs to one stage: moving on to the next clears it.
+  const [pausedPhase, setPausedPhase] = useState<SplitTimerPhase | null>(null);
+  const paused = pausedPhase === phase;
+  const prep = useCountdownTimer({
+    seconds: prepSeconds,
+    active: phase === "prep",
+    paused,
+    onComplete: onPrepComplete,
+    onWarningSecond,
+    timerKey: `impromptu-prep-${topic}`,
+  });
+  const speak = useCountdownTimer({
+    seconds: speakSeconds,
+    active: phase === "speak",
+    paused,
+    onComplete: onSpeakComplete,
+    onWarningSecond,
+    timerKey: `impromptu-speak-${topic}`,
+  });
+
+  const splitSteps = IMPROMPTU_MAX_SECONDS / IMPROMPTU_SPLIT_STEP_SECONDS;
+  const clampPrep = (seconds: number) =>
+    Math.min(IMPROMPTU_PREP_MAX_SECONDS, Math.max(IMPROMPTU_PREP_MIN_SECONDS, seconds));
+  // Clicking or dragging anywhere on the bar puts the split at the nearest allowed half minute.
+  const draggingRef = useRef(false);
+  const moveSplitTo = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const raw = ((event.clientX - rect.left) / rect.width) * IMPROMPTU_MAX_SECONDS;
+    const next = clampPrep(Math.round(raw / IMPROMPTU_SPLIT_STEP_SECONDS) * IMPROMPTU_SPLIT_STEP_SECONDS);
+    if (next !== prepSeconds) onPrepSecondsChange(next);
+  };
+  const splitPointerHandlers =
+    phase === "setup"
+      ? {
+          onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            draggingRef.current = true;
+            moveSplitTo(event);
+          },
+          onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+            if (draggingRef.current) moveSplitTo(event);
+          },
+          onPointerUp: () => {
+            draggingRef.current = false;
+          },
+          onPointerCancel: () => {
+            draggingRef.current = false;
+          },
+        }
+      : {};
+  const prepShown = phase === "setup" ? prepSeconds : phase === "prep" ? Math.min(prep.remaining, prepSeconds) : 0;
+  const speakShown = phase === "speak" ? Math.min(speak.remaining, speakSeconds) : speakSeconds;
+  const togglePause = () => {
+    setPausedPhase(paused ? null : phase);
+    if (phase === "speak") onPauseChange(!paused);
+  };
+  const pauseButton = (
+    <button className="timer-control" type="button" onClick={togglePause}>
+      {paused ? RESUME_ICON : PAUSE_ICON}
+      {paused ? "Resume" : "Pause"}
+    </button>
+  );
+
+  return (
+    <section className="timer-stage split-timer">
+      <div className="topic-banner">
+        <span>{phase === "setup" ? "Your topic" : phase === "prep" ? "Plan your speech" : "Record your speech"}</span>
+        <strong>{topic}</strong>
+      </div>
+      <div className={`split-bar ${phase === "setup" ? "" : "locked"}`}>
+        <div className="split-bar-heading">
+          <span className="prep">{formatDuration(prepSeconds)} prep</span>
+          <strong>Split your 7 minutes</strong>
+          <span className="speak">{formatDuration(speakSeconds)} speak</span>
+        </div>
+        <div className="split-bar-track" {...splitPointerHandlers}>
+          <div className="split-bar-fill" aria-hidden="true">
+            <span className="prep" style={{ flexGrow: prepSeconds }} />
+            <span className="speak" style={{ flexGrow: speakSeconds }} />
+          </div>
+          <span
+            className="split-bar-knob"
+            aria-hidden="true"
+            style={{ left: `calc((100% - 8px) * ${prepSeconds / IMPROMPTU_MAX_SECONDS} + 4px)` }}
+          />
+          {phase === "setup" ? (
+            <>
+              {/* A line at every half minute, each one a place the split can stop. */}
+              <div className="split-bar-ticks" aria-hidden="true">
+                {Array.from({ length: splitSteps - 1 }, (_, index) => (
+                  <span key={index} style={{ left: `${((index + 1) / splitSteps) * 100}%` }} />
+                ))}
+              </div>
+              {/* The pointer is handled by the track; this slider is for the keyboard and screen readers. */}
+              <input
+                type="range"
+                min={0}
+                max={IMPROMPTU_MAX_SECONDS}
+                step={IMPROMPTU_SPLIT_STEP_SECONDS}
+                value={prepSeconds}
+                aria-label="Prep time"
+                aria-valuetext={`${formatDuration(prepSeconds)} to prep, ${formatDuration(speakSeconds)} to speak`}
+                onChange={(event) => onPrepSecondsChange(clampPrep(Number(event.target.value)))}
+              />
+            </>
+          ) : null}
+        </div>
+      </div>
+      <div className="split-timer-cards">
+        <SplitTimerRing
+          tone="prep"
+          label="1 · Prep"
+          seconds={prepShown}
+          total={phase === "prep" ? prepSeconds : IMPROMPTU_MAX_SECONDS}
+          live={phase === "prep"}
+        />
+        <div className="split-timer-then" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          <span>then</span>
+        </div>
+        <SplitTimerRing
+          tone="speak"
+          label="2 · Speak"
+          seconds={speakShown}
+          total={phase === "speak" ? speakSeconds : IMPROMPTU_MAX_SECONDS}
+          live={phase === "speak"}
+        />
+      </div>
+      {phase === "setup" || phase === "speakReady" ? (
+        <button className="primary big-action" type="button" onClick={onStart}>
+          {phase === "setup" ? "Start prep" : "Start speaking"}
+        </button>
+      ) : phase === "prep" ? (
+        <div className="timer-controls">
+          {pauseButton}
+          <button className="timer-control" type="button" onClick={prep.finishNow}>
+            Speak now
+          </button>
+        </div>
+      ) : (
+        <div className="timer-controls">
+          {pauseButton}
+          <button className={`timer-control stop ${recording && !paused ? "live" : ""}`} type="button" onClick={speak.finishNow}>
+            <span className="record-dot" aria-hidden="true" />
+            Stop
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -1680,11 +1969,8 @@ function GameRoundTimer({
   const { remaining, finishNow } = useCountdownTimer({
     seconds: duration,
     active: started,
-    // Running out of time stays on the round; the button moves on.
-    onComplete: (elapsed, completion) => {
-      if (completion === "expired") return;
-      onComplete(elapsed, duration);
-    },
+    // Running out of time moves on, the same as the button.
+    onComplete: (elapsed) => onComplete(elapsed, duration),
     onWarningSecond,
     timerKey: label,
   });
@@ -2631,7 +2917,41 @@ function AnalysisTabPager({ activeTab, onSelect }: { activeTab: AnalysisTab; onS
   );
 }
 
+// Recordings live in a private bucket. Rows keep the file's storage URL; playback swaps it for a
+// short-lived signed link that only the recording's owner can create.
+const RECORDINGS_BUCKET = "impromptu-recordings";
+const SIGNED_AUDIO_SECONDS = 60 * 60;
+
+function recordingPathFromUrl(url: string) {
+  const match = url.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/impromptu-recordings\/([^?#]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function usePlayableAudioSrc(src: string) {
+  const path = recordingPathFromUrl(src);
+  const [signed, setSigned] = useState<{ path: string; url: string } | null>(null);
+
+  useEffect(() => {
+    if (!path || !supabase) return undefined;
+    let cancelled = false;
+    void supabase.storage
+      .from(RECORDINGS_BUCKET)
+      .createSignedUrl(path, SIGNED_AUDIO_SECONDS)
+      .then(({ data }) => {
+        if (!cancelled && data?.signedUrl) setSigned({ path, url: data.signedUrl });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  // Local (blob:) audio plays as is; stored audio waits for its signed link.
+  if (!path) return src;
+  return signed?.path === path ? signed.url : undefined;
+}
+
 function AudioPlayer({ src }: { src: string }) {
+  const playableSrc = usePlayableAudioSrc(src);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -2651,7 +2971,7 @@ function AudioPlayer({ src }: { src: string }) {
       audioEl.removeEventListener("loadedmetadata", onLoaded);
       audioEl.removeEventListener("ended", onEnded);
     };
-  }, [src]);
+  }, [playableSrc]);
 
   const toggle = () => {
     const audioEl = audioRef.current;
@@ -2678,7 +2998,7 @@ function AudioPlayer({ src }: { src: string }) {
 
   return (
     <div className="audio-player">
-      <audio ref={audioRef} src={src} preload="metadata" />
+      <audio ref={audioRef} src={playableSrc} preload="metadata" />
       <button type="button" className="audio-play-button" onClick={toggle} aria-label={isPlaying ? "Pause" : "Play"}>
         {isPlaying ? <PauseIcon /> : <PlayIcon />}
       </button>
@@ -3192,9 +3512,13 @@ export default function SpeechBrigade() {
     const current = screenRef.current;
     if (next === current) return;
     screenRef.current = next;
-    const state = withRouterHistoryState({ screen: next, key: historyKeyRef.current });
-    if (TRANSIENT_SCREENS.has(current)) window.history.replaceState(state, "");
-    else window.history.pushState(state, "");
+    if (TRANSIENT_SCREENS.has(current)) {
+      // The replaced entry keeps the screen it was reached from.
+      const from = window.history.state?.key === historyKeyRef.current ? window.history.state.from : undefined;
+      window.history.replaceState(withRouterHistoryState({ screen: next, key: historyKeyRef.current, from }), "");
+    } else {
+      window.history.pushState(withRouterHistoryState({ screen: next, key: historyKeyRef.current, from: current }), "");
+    }
     setScreenState(next);
   }, []);
 
@@ -3203,14 +3527,17 @@ export default function SpeechBrigade() {
     setScreen("rulesDetail");
   };
 
+  // Back returns to the previous screen when this page load pushed the current entry; otherwise
+  // (after a reload, a sign-in redirect, or an entry the router added) the previous entry may load
+  // the page fresh, which would reopen the saved event, so go to the screen's parent instead.
   const goBack = useCallback(() => {
-    if (window.history.state?.key === historyKeyRef.current && screenRef.current !== "landing") {
-      window.history.back();
-    } else {
-      screenRef.current = "landing";
-      setScreenState("landing");
-    }
-  }, []);
+    const current = screenRef.current;
+    if (current === "landing") return;
+    writeOpenEvent("");
+    const state = window.history.state;
+    if (state?.key === historyKeyRef.current && state.from) window.history.back();
+    else setScreen(PARENT_SCREENS[current] ?? "landing");
+  }, [setScreen]);
   const [round, setRound] = useState<RoundState>(initialRound);
   // Bumped to remount the theme spinner reel when a round resets.
   const [themeReelKey, setThemeReelKey] = useState(0);
@@ -3241,7 +3568,7 @@ export default function SpeechBrigade() {
   const [authBusyLabel, setAuthBusyLabel] = useState("");
   // Set when someone arrives from a password reset email, until they choose a new password.
   const [passwordRecovery, setPasswordRecovery] = useState(false);
-  const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut" | "done">("idle");
+  const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut">("idle");
   const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(true);
   const [saveRecordingEnabled, setSaveRecordingEnabled] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("speech-brigade-save-recording") === "true",
@@ -3259,7 +3586,6 @@ export default function SpeechBrigade() {
   const [vaultFilters, setVaultFilters] = useState<VaultFilters>(DEFAULT_VAULT_FILTERS);
   const vaultFiltersActive = JSON.stringify(vaultFilters) !== JSON.stringify(DEFAULT_VAULT_FILTERS);
   const [foundersOpen, setFoundersOpen] = useState(false);
-  const [hideTipForMobileOverlap, setHideTipForMobileOverlap] = useState(false);
   const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
   const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<SpeakingGameId | null>(null);
@@ -3286,14 +3612,14 @@ export default function SpeechBrigade() {
   // Impromptu and Extemp setups either spin the built-in topics or the person's own ("My Topic").
   const [topicSource, setTopicSource] = useState<"spin" | "mine">("spin");
   const [scriptUploadStatus, setScriptUploadStatus] = useState("");
-  const [pendingAuthScreen, setPendingAuthScreen] = useState<Screen | null>(null);
+  // The event a signed-out person was opening, shown once they sign in on this page.
+  const pendingAuthScreenRef = useRef<Screen | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const saveRecordingPreferenceLoadedRef = useRef(false);
   const scriptInputRef = useRef<HTMLInputElement | null>(null);
-  const creatorButtonRef = useRef<HTMLButtonElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const lastPointerTypeRef = useRef("");
 
@@ -3337,19 +3663,17 @@ export default function SpeechBrigade() {
   }, []);
 
   useEffect(() => {
-    if (screen === "eventsAuth" && session) {
+    if (screen === "signIn" && session && !passwordRecovery) {
       const id = window.setTimeout(() => {
-        setScreen(pendingAuthScreen || "events");
-        setPendingAuthScreen(null);
+        const pending = pendingAuthScreenRef.current;
+        pendingAuthScreenRef.current = null;
+        writePendingSignInEvent("");
+        setScreen(pending || "settings");
       }, 0);
       return () => window.clearTimeout(id);
     }
-    if (screen === "signIn" && session && !passwordRecovery) {
-      const id = window.setTimeout(() => setScreen("settings"), 0);
-      return () => window.clearTimeout(id);
-    }
     return undefined;
-  }, [screen, session, setScreen, pendingAuthScreen, passwordRecovery]);
+  }, [screen, session, setScreen, passwordRecovery]);
 
   // Page sizes by offset: the first 10, the next 20, then everything else.
   const fetchVaultPage = useCallback(async (offset: number) => {
@@ -3446,37 +3770,6 @@ export default function SpeechBrigade() {
   }, [foundersOpen]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const mobileQuery = window.matchMedia("(max-width: 760px)");
-    const updateTipVisibility = () => {
-      if (!mobileQuery.matches) {
-        setHideTipForMobileOverlap(false);
-        return;
-      }
-
-      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-      const blockingElements = [headerRef.current, creatorButtonRef.current].filter(Boolean) as HTMLElement[];
-      const shouldHide = blockingElements.some((element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.bottom > 0 && rect.top < viewportHeight;
-      });
-      setHideTipForMobileOverlap(shouldHide);
-    };
-
-    const frame = window.requestAnimationFrame(updateTipVisibility);
-    window.addEventListener("scroll", updateTipVisibility, { passive: true });
-    window.addEventListener("resize", updateTipVisibility);
-    mobileQuery.addEventListener("change", updateTipVisibility);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", updateTipVisibility);
-      window.removeEventListener("resize", updateTipVisibility);
-      mobileQuery.removeEventListener("change", updateTipVisibility);
-    };
-  }, [screen]);
-
-  useEffect(() => {
     if (!infoModal) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setInfoModal(null);
@@ -3525,13 +3818,18 @@ export default function SpeechBrigade() {
     setInfoModal(null);
   };
 
-  const goToPracticeStart = (nextScreen: Screen) => {
+  // openEvent names the event the way the open-event storage does, so a redirect sign-in can reopen it.
+  const goToPracticeStart = (nextScreen: Screen, openEvent: string) => {
     if (isSupabaseConfigured && !session) {
-      setPendingAuthScreen(nextScreen);
-      setScreen("eventsAuth");
+      pendingAuthScreenRef.current = nextScreen;
+      writePendingSignInEvent(openEvent);
+      setAuthMode("signIn");
+      setAuthStatus("idle");
+      setAuthError("");
+      setScreen("signIn");
       return;
     }
-    setPendingAuthScreen(null);
+    pendingAuthScreenRef.current = null;
     setScreen(nextScreen);
   };
 
@@ -3542,7 +3840,8 @@ export default function SpeechBrigade() {
     setPreparedResult(null);
     setPreparedScript(null);
     setScriptUploadStatus("");
-    setPendingAuthScreen(null);
+    pendingAuthScreenRef.current = null;
+    writePendingSignInEvent("");
     setSelectedGameId(null);
     setGameSession(null);
     setGameRevealSpinning(false);
@@ -3570,7 +3869,7 @@ export default function SpeechBrigade() {
     resetModeRound(mode);
     const introScreen = mode === "impromptu" ? "impromptuIntro" : "extempIntro";
     if (restoring) setScreen(introScreen);
-    else goToPracticeStart(introScreen);
+    else goToPracticeStart(introScreen, mode);
   };
 
   const startPreparedEvent = (eventId: PreparedEventId, restoring = false) => {
@@ -3587,7 +3886,7 @@ export default function SpeechBrigade() {
     setRecordingError("");
     setPreparedStage("setup");
     if (restoring) setScreen("preparedEventIntro");
-    else goToPracticeStart("preparedEventIntro");
+    else goToPracticeStart("preparedEventIntro", `prepared:${eventId}`);
   };
 
   const startSpeakingGame = (gameId: SpeakingGameId) => {
@@ -3599,16 +3898,35 @@ export default function SpeechBrigade() {
     setScreen("gameSetup");
   };
 
+  // Opens a saved event ("impromptu", "extemp", "prepared:<id>", or "game:<id>") without the sign-in gate.
+  const reopenEvent = (openEvent: string) => {
+    const [eventKind, eventId] = openEvent.split(":");
+    // Put the event's list page underneath so Back from the reopened event lands there.
+    if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) setScreen("gamesSelection");
+    else if (eventKind === "impromptu" || eventKind === "extemp" || (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS)) setScreen("events");
+    if (eventKind === "impromptu" || eventKind === "extemp") startMode(eventKind, true);
+    else if (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS) startPreparedEvent(eventId as PreparedEventId, true);
+    else if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) startSpeakingGame(eventId as SpeakingGameId);
+  };
+
+  // Back from a Google or email-link sign-in: the page reloaded, so reopen the event they were opening.
+  useEffect(() => {
+    if (!session || screenRef.current === "signIn") return undefined;
+    const pending = readPendingSignInEvent();
+    if (!pending) return undefined;
+    writePendingSignInEvent("");
+    const id = window.setTimeout(() => reopenEvent(pending), 0);
+    return () => window.clearTimeout(id);
+    // Runs when the session arrives; reopenEvent only starts screens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   useEffect(() => {
     historyKeyRef.current = `${Date.now()}-${Math.random()}`;
     window.history.replaceState(withRouterHistoryState({ screen: "landing", key: historyKeyRef.current }), "");
 
-    const [eventKind, eventId] = readOpenEvent().split(":");
-    const restoreId = window.setTimeout(() => {
-      if (eventKind === "impromptu" || eventKind === "extemp") startMode(eventKind, true);
-      else if (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS) startPreparedEvent(eventId as PreparedEventId, true);
-      else if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) startSpeakingGame(eventId as SpeakingGameId);
-    }, 0);
+    const openEvent = readOpenEvent();
+    const restoreId = window.setTimeout(() => reopenEvent(openEvent), 0);
 
     const handlePopState = (event: PopStateEvent) => {
       const state = event.state as { screen?: Screen; key?: string } | null;
@@ -3655,6 +3973,16 @@ export default function SpeechBrigade() {
     // Runs once on load; the start functions only read state from that first render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Leaving the sign-in page without signing in drops the event it was going to open.
+  const previousScreenRef = useRef(screen);
+  useEffect(() => {
+    if (previousScreenRef.current === "signIn" && screen !== "signIn" && !session) {
+      pendingAuthScreenRef.current = null;
+      writePendingSignInEvent("");
+    }
+    previousScreenRef.current = screen;
+  }, [screen, session]);
 
   useEffect(() => {
     if (NON_EVENT_SCREENS.has(screen)) writeOpenEvent("");
@@ -3889,11 +4217,34 @@ export default function SpeechBrigade() {
     setAuthNeedsConfirm(false);
   };
 
+  // Browsers treat a clicked text field as keyboard focus, so the page tracks whether Tab or the
+  // pointer was used last and the sign-in fields only mark focus after Tab.
+  useEffect(() => {
+    const root = document.documentElement;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Tab") root.dataset.keyboard = "";
+    };
+    const onPointerDown = () => {
+      delete root.dataset.keyboard;
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, []);
+
   const signOut = async () => {
     if (!supabase) return;
     setSignOutStatus("signingOut");
     const { error } = await supabase.auth.signOut();
-    setSignOutStatus(error ? "confirming" : "done");
+    if (error) {
+      setSignOutStatus("confirming");
+      return;
+    }
+    setSignOutStatus("idle");
+    goHome();
   };
 
   const signInWithGoogle = async () => {
@@ -3976,7 +4327,7 @@ export default function SpeechBrigade() {
 	    const extension = blob.type.includes("mp4") ? "m4a" : "webm";
 	    const path = `${userId}/${Date.now()}.${extension}`;
 	    const { error: uploadError } = await supabase.storage
-	      .from("impromptu-recordings")
+	      .from(RECORDINGS_BUCKET)
 	      .upload(path, blob, { contentType: blob.type || "audio/webm" });
 	    if (uploadError) {
 	      const statusCode = "statusCode" in uploadError ? String(uploadError.statusCode) : "";
@@ -3985,7 +4336,9 @@ export default function SpeechBrigade() {
 	      }
 	      throw uploadError;
 	    }
-	    const { data: publicUrlData } = supabase.storage.from("impromptu-recordings").getPublicUrl(path);
+	    // The bucket is private, so this URL doesn't play on its own; it records where the file is, and
+	    // AudioPlayer turns it into a signed link.
+	    const { data: publicUrlData } = supabase.storage.from(RECORDINGS_BUCKET).getPublicUrl(path);
 	    return { extension, path, audioUrl: publicUrlData.publicUrl };
 	  };
 
@@ -3993,7 +4346,7 @@ export default function SpeechBrigade() {
 	    if (!supabase) return;
 	    const cleanupTasks: Array<Promise<unknown>> = [];
 	    if (recordingId) cleanupTasks.push(Promise.resolve(supabase.from("recordings").delete().eq("id", recordingId)));
-	    if (path) cleanupTasks.push(supabase.storage.from("impromptu-recordings").remove([path]));
+	    if (path) cleanupTasks.push(supabase.storage.from(RECORDINGS_BUCKET).remove([path]));
 	    const results = await Promise.allSettled(cleanupTasks);
 	    results.forEach((result) => {
 	      if (result.status === "rejected") {
@@ -4350,19 +4703,18 @@ export default function SpeechBrigade() {
     </div>
   );
 
-  // Running out of prep time stays on the page; "I'm ready to speak" moves on.
+  // Running out of prep time rolls straight into delivery with its timer already going. So does
+  // Impromptu's "Speak now"; Extemp's "I'm ready to speak" moves on early and waits for Start.
   const handlePrepComplete = (elapsed: number, completion: CompletionStatus) => {
     setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
-    if (completion === "expired") return;
-    setRoundTimerStarted(false);
+    if (completion !== "expired" && round.mode !== "impromptu") setRoundTimerStarted(false);
     setScreen("recordSpeech");
   };
 
-	  // Running out of delivery time stays on the page; Stop moves on to the review page.
+	  // Running out of delivery time ends the recording and moves on to the review page, like Stop.
 	  const handleDeliveryComplete = (elapsed: number, completion: CompletionStatus) => {
 	    const roundedElapsed = Math.round(elapsed);
 	    setRound((current) => ({ ...current, deliverySecondsUsed: roundedElapsed }));
-	    if (completion === "expired") return;
 	    const mode = round.mode;
     if (!mode) {
       setScreen("results");
@@ -4532,9 +4884,9 @@ export default function SpeechBrigade() {
     });
   };
 
-  // Running out of time stays on the page; Stop moves on to the review page.
+  // Running out of time ends the recording and moves on to the review page, like Stop.
   const handlePreparedPerformanceComplete = (elapsed: number, completion: CompletionStatus) => {
-    if (!selectedPreparedEventId || completion === "expired") return;
+    if (!selectedPreparedEventId) return;
     const roundedElapsed = Math.round(elapsed);
     const baseResult = preparedBaseResult(selectedPreparedEventId, roundedElapsed, completion);
 
@@ -4569,9 +4921,50 @@ export default function SpeechBrigade() {
     });
   };
 
-  const warningTone = (second: number) => audio.countdown(second === 0);
+  // Dings for the last five seconds, then a double bell at zero as the page moves on.
+  const warningTone = (second: number) => (second === 0 ? audio.bell() : audio.countdown());
 
   const selectedPrompt = round.mode === "extemp" ? round.selectedQuestion?.question || "" : round.selectedTopic;
+  // Impromptu plans and speaks on one page, shared by the planSpeech and recordSpeech screens.
+  const impromptuPrepSeconds = Math.min(
+    IMPROMPTU_PREP_MAX_SECONDS,
+    Math.max(
+      IMPROMPTU_PREP_MIN_SECONDS,
+      Math.round(round.prepSecondsAllocated / IMPROMPTU_SPLIT_STEP_SECONDS) * IMPROMPTU_SPLIT_STEP_SECONDS,
+    ),
+  );
+  const setImpromptuSplit = (prepSeconds: number) =>
+    setRound((current) => ({
+      ...current,
+      prepSecondsAllocated: prepSeconds,
+      deliverySecondsAllocated: IMPROMPTU_MAX_SECONDS - prepSeconds,
+    }));
+  const impromptuTimerPage = (
+    <section className="delivery-layout round-timer-page">
+      {screen === "recordSpeech" && roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
+        <p className="recording-notice error">Microphone unavailable — this round won&apos;t be recorded.</p>
+      ) : null}
+      <SplitRoundTimer
+        topic={selectedPrompt}
+        phase={
+          screen === "planSpeech" ? (roundTimerStarted ? "prep" : "setup") : roundTimerStarted ? "speak" : "speakReady"
+        }
+        prepSeconds={impromptuPrepSeconds}
+        speakSeconds={IMPROMPTU_MAX_SECONDS - impromptuPrepSeconds}
+        onPrepSecondsChange={setImpromptuSplit}
+        onStart={() => {
+          audio.unlock();
+          setImpromptuSplit(impromptuPrepSeconds);
+          setRoundTimerStarted(true);
+        }}
+        onPrepComplete={handlePrepComplete}
+        onSpeakComplete={handleDeliveryComplete}
+        onWarningSecond={warningTone}
+        recording={isRecordingAudio}
+        onPauseChange={pauseRecording}
+      />
+    </section>
+  );
   const impromptuThemeTopics = (themeBank.find((item) => item.theme === round.impromptuTheme) || themeBank[0]).topics;
   const playInteractionSoundForTarget = (target: HTMLElement | null) => {
     if (!target?.closest("button:not(:disabled), a[href]")) return;
@@ -4842,9 +5235,9 @@ export default function SpeechBrigade() {
           <section className="results game-results">
             <h1>{gameConfig.name}</h1>
             {gamePrompt ? <p className="game-results-prompt">{gamePrompt}</p> : null}
-            <dl className={`game-results-rounds ${gameConfig.id === "threeTwoOne" ? "tiered" : ""}`}>
+            <dl className="game-results-rounds">
               {gameConfig.rounds.map((round, index) => (
-                <div className={`game-results-round tier-${index}`} key={round.label}>
+                <div className="game-results-round" key={round.label}>
                   <dt>
                     {gameConfig.id === "threeTwoOne"
                       ? `Round ${index + 1}`
@@ -5014,7 +5407,7 @@ export default function SpeechBrigade() {
                   ref={scriptInputRef}
                   className="visually-hidden"
                   type="file"
-                  accept=".pdf,.docx,.txt,.md,.rtf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                   onChange={handleScriptFileChange}
                 />
                 <button className="script-upload-card" type="button" onClick={() => scriptInputRef.current?.click()}>
@@ -5023,7 +5416,7 @@ export default function SpeechBrigade() {
                   <span>
                     {preparedScript?.status === "ready"
                       ? "Click to choose a different file."
-                      : "PDF, DOCX, TXT, MD, and RTF files are supported."}
+                      : "PDF, DOCX, and TXT files are supported."}
                   </span>
                 </button>
                 {scriptUploadStatus ? <p className="script-status">{scriptUploadStatus}</p> : null}
@@ -5115,30 +5508,6 @@ export default function SpeechBrigade() {
           </section>
         );
       }
-      case "eventsAuth":
-        return (
-          <section className="narrow auth-screen">
-            <p className="eyebrow">{isSupabaseConfigured ? "Sign in to continue" : "Local preview"}</p>
-            <h1>{isSupabaseConfigured ? "Sign in to your account" : "Practice mode is available"}</h1>
-            <p className="lede">
-              {isSupabaseConfigured
-                ? "Sign in to your account, or sign up for a new one, to start a Competitive Speech & Debate practice round."
-                : "Supabase is not configured on this computer, so saved recordings and speech analysis are disabled. Timers, prompts, and practice rounds still work."}
-            </p>
-            {!isSupabaseConfigured ? (
-              <button className="primary" type="button" onClick={() => setScreen("events")}>
-                Continue to Events
-              </button>
-            ) : (
-              <button className="primary" type="button" onClick={() => setScreen("signIn")}>
-                Sign In
-              </button>
-            )}
-            <button className="secondary" type="button" onClick={goBack}>
-              Back
-            </button>
-          </section>
-        );
       case "signIn": {
         const passwordToggle = (
           <button
@@ -5357,11 +5726,6 @@ export default function SpeechBrigade() {
                 </div>
               </>
             )}
-            {passwordRecovery ? null : (
-              <button className="secondary" type="button" onClick={goBack}>
-                Back
-              </button>
-            )}
           </section>
         );
       }
@@ -5386,14 +5750,14 @@ export default function SpeechBrigade() {
                   <p>{session.user.app_metadata?.provider === "google" ? "Google" : "Email"}</p>
                 </div>
               </div>
-            ) : signOutStatus === "done" ? (
-              <p className="lede sign-out-success">You&apos;ve successfully signed out.</p>
             ) : (
               <p className="lede">You&apos;re not signed in.</p>
             )}
-            <button className="secondary" type="button" onClick={goBack}>
-              Back
-            </button>
+            {!session ? (
+              <button className="secondary" type="button" onClick={goHome}>
+                Back to Home
+              </button>
+            ) : null}
             {isSupabaseConfigured && session ? (
               signOutStatus === "confirming" || signOutStatus === "signingOut" ? (
                 <div className="sign-out-confirm" role="group" aria-label="Confirm sign out">
@@ -5528,13 +5892,13 @@ export default function SpeechBrigade() {
           </section>
         );
       case "planSpeech":
+        if (round.mode === "impromptu") return impromptuTimerPage;
         return (
           <section className="delivery-layout round-timer-page">
             <TimerPanel
               seconds={round.prepSecondsAllocated}
               presets={round.mode === "extemp" ? EXTEMP_PREP_PRESETS : undefined}
               presetsAbove
-              maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
               onSecondsChange={(seconds) => setRound((current) => ({ ...current, prepSecondsAllocated: seconds }))}
               buttonLabel="I'm ready to speak"
               topic={selectedPrompt}
@@ -5551,6 +5915,7 @@ export default function SpeechBrigade() {
           </section>
         );
       case "recordSpeech":
+        if (round.mode === "impromptu") return impromptuTimerPage;
         return (
           <section className="delivery-layout round-timer-page">
             {roundTimerStarted && (speechAnalysisEnabled || saveRecordingEnabled) && recordingError ? (
@@ -5559,7 +5924,6 @@ export default function SpeechBrigade() {
             <TimerPanel
               seconds={round.deliverySecondsAllocated}
               presets={round.mode === "extemp" ? EXTEMP_DURATION_PRESETS : undefined}
-              maxSeconds={round.mode === "impromptu" ? IMPROMPTU_MAX_SECONDS : undefined}
               onSecondsChange={(seconds) => setRound((current) => ({ ...current, deliverySecondsAllocated: seconds }))}
               pausable
               recording={isRecordingAudio}
@@ -5829,7 +6193,6 @@ export default function SpeechBrigade() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <div className="ambient" aria-hidden="true" />
 	      <header className="app-header" ref={headerRef}>
 	        {screen === "landing" ? (
 	          <>
@@ -5891,35 +6254,34 @@ export default function SpeechBrigade() {
 	          )}
 	        </nav>
 	      </header>
-      <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={screen}>
+      <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={round.mode === "impromptu" && (screen === "planSpeech" || screen === "recordSpeech") ? "impromptuRound" : screen}>
         {content}
       </div>
       {screen === "landing" ? (
-      <button
-        type="button"
-        ref={creatorButtonRef}
-        className="creator-float"
-        onClick={() => setFoundersOpen(true)}
-        aria-label="Meet Speech Brigade's founders"
-      >
-        <span className="creator-faces" aria-hidden="true">
-          <Image unoptimized src="/founders/jd-hopper-founder.png" alt="" width={64} height={64} />
-          <Image unoptimized src="/founders/mona-su.jpg" alt="" width={64} height={64} />
-        </span>
-        <span className="creator-copy">Meet the founders →</span>
-      </button>
-      ) : null}
-      {screen === "landing" ? (
-      <a
-        className={`tip-float ${hideTipForMobileOverlap ? "tip-float-hidden" : ""}`}
-        href="https://buymeacoffee.com/speechbrigade"
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Leave a tip to keep Speech Brigade free"
-      >
-        <span className="tip-copy-desktop">Leave a tip to keep our site free!</span>
-        <span className="tip-copy-mobile">Leave a tip</span>
-      </a>
+        // A quiet footer for the tip jar and the founders, so nothing floats over the page on phones.
+        <footer className="home-footer">
+          <a
+            className="home-footer-tip"
+            href="https://buymeacoffee.com/speechbrigade"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Leave a tip to keep Speech Brigade free"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+            </svg>
+            Leave a tip
+          </a>
+          <span aria-hidden="true">·</span>
+          <button className="home-footer-founders" type="button" onClick={() => setFoundersOpen(true)}>
+            Meet the founders
+          </button>
+          <span className="home-footer-legal">
+            <a href="/privacy/">Privacy</a>
+            <span aria-hidden="true">·</span>
+            <a href="/terms/">Terms</a>
+          </span>
+        </footer>
       ) : null}
       {infoModal ? (
         <div

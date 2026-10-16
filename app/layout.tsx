@@ -84,7 +84,11 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300..700;1,400&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {/* Sits just above the page's top, so only a phone's pull past the top reveals it. */}
+        <div className="overscroll-spinner" aria-hidden="true" />
+        {children}
+      </body>
     </html>
   );
 }
