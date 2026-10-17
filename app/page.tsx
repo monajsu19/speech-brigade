@@ -569,7 +569,9 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
   },
 };
 
-const SPEAKING_GAME_IDS: SpeakingGameId[] = ["hotSeat", "wordFusion", "storyRelay", "landPlane", "threeTwoOne", "weighing"];
+// The games offered on the Games and Rules pages. The individual games (Hot Seat, Word Fusion,
+// Story Relay, Land the Plane) are switched off for now; their setup stays below.
+const SPEAKING_GAME_IDS: SpeakingGameId[] = ["threeTwoOne", "weighing"];
 
 const hotSeatQuestions = [
   "What is one lesson everyone should learn before graduating high school?",
@@ -3902,11 +3904,11 @@ export default function SpeechBrigade() {
   const reopenEvent = (openEvent: string) => {
     const [eventKind, eventId] = openEvent.split(":");
     // Put the event's list page underneath so Back from the reopened event lands there.
-    if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) setScreen("gamesSelection");
+    if (eventKind === "game" && SPEAKING_GAME_IDS.includes(eventId as SpeakingGameId)) setScreen("gamesSelection");
     else if (eventKind === "impromptu" || eventKind === "extemp" || (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS)) setScreen("events");
     if (eventKind === "impromptu" || eventKind === "extemp") startMode(eventKind, true);
     else if (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS) startPreparedEvent(eventId as PreparedEventId, true);
-    else if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) startSpeakingGame(eventId as SpeakingGameId);
+    else if (eventKind === "game" && SPEAKING_GAME_IDS.includes(eventId as SpeakingGameId)) startSpeakingGame(eventId as SpeakingGameId);
   };
 
   // Back from a Google or email-link sign-in: the page reloaded, so reopen the event they were opening.
@@ -5027,20 +5029,13 @@ export default function SpeechBrigade() {
             <p className="eyebrow">Speaking Games</p>
             <h1>Choose Your Game</h1>
             <div className="event-board">
-              <h2 className="event-group-title wide">Team</h2>
-              {SPEAKING_GAME_IDS.filter((gameId) => SPEAKING_GAME_CONFIGS[gameId].team).map((gameId, index) => (
+              {SPEAKING_GAME_IDS.map((gameId, index) => (
                 <button
                   className={`event-card compact ${index === 0 ? "centered-row-start" : ""}`}
                   type="button"
                   key={gameId}
                   onClick={() => startSpeakingGame(gameId)}
                 >
-                  <EventCardTitle name={SPEAKING_GAME_CONFIGS[gameId].name} />
-                </button>
-              ))}
-              <h2 className="event-group-title wide">Individual</h2>
-              {SPEAKING_GAME_IDS.filter((gameId) => !SPEAKING_GAME_CONFIGS[gameId].team).map((gameId) => (
-                <button className="event-card compact" type="button" key={gameId} onClick={() => startSpeakingGame(gameId)}>
                   <EventCardTitle name={SPEAKING_GAME_CONFIGS[gameId].name} />
                 </button>
               ))}
