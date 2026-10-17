@@ -2087,10 +2087,10 @@ function InstructionBlock({ children }: { children: React.ReactNode }) {
 function ImpromptuRules() {
   return (
     <>
-      <p>Plan for up to <strong>7 minutes</strong> and speak for up to <strong>7 minutes</strong>. Drag either timer to set its length before you press Start.</p>
+      <p>You get <strong>7 minutes</strong> in all. Drag the bar to split them between prep and speaking before you start.</p>
       <p>Spin for a <strong>theme</strong>, then get three related topics.</p>
       <p><strong>Choose</strong> a topic, then press <strong>Start planning</strong>.</p>
-      <p>On each page, press <strong>Start</strong> to begin the timer. Press <strong>I&apos;m ready to speak</strong> when you finish prepping.</p>
+      <p>Press <strong>Start prep</strong> to begin. Your speaking time starts by itself when prep runs out, or press <strong>Speak now</strong> to start early.</p>
     </>
   );
 }
@@ -2100,7 +2100,7 @@ function ExtempRules() {
     <>
       <p>Answer a current-events question with a clear, organized, evidence-based speech.</p>
       <p>Draw <strong>three questions</strong>, choose one, then press <strong>Start planning</strong>.</p>
-      <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong>. Each timer begins when you press <strong>Start</strong>.</p>
+      <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong>. Press <strong>Start</strong> to begin prep; your speaking time starts by itself when prep runs out or you press <strong>I&apos;m ready to speak</strong>.</p>
     </>
   );
 }
@@ -4705,11 +4705,10 @@ export default function SpeechBrigade() {
     </div>
   );
 
-  // Running out of prep time rolls straight into delivery with its timer already going. So does
-  // Impromptu's "Speak now"; Extemp's "I'm ready to speak" moves on early and waits for Start.
-  const handlePrepComplete = (elapsed: number, completion: CompletionStatus) => {
+  // Running out of prep time rolls straight into delivery with its timer already going, and so
+  // does finishing prep early (Impromptu's "Speak now", Extemp's "I'm ready to speak").
+  const handlePrepComplete = (elapsed: number) => {
     setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
-    if (completion !== "expired" && round.mode !== "impromptu") setRoundTimerStarted(false);
     setScreen("recordSpeech");
   };
 
