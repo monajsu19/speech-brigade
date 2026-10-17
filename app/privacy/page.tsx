@@ -57,9 +57,9 @@ export default function PrivacyPolicy() {
           If you upload a script (PDF, DOCX, or TXT), its text is read in your browser. The file itself is not
           uploaded; only the text you choose to analyze is sent to the Service for feedback.
         </p>
-        <h3>e. AI-Generated Analysis</h3>
+        <h3>e. LLM-Generated Analysis</h3>
         <p>
-          We submit your transcripts and script text to a third-party large language model to generate feedback, including
+          We submit your transcripts and script text to a third-party large language model (LLM) to generate feedback, including
           scores, sentence-level annotations, suggested improvements, and other coaching content. When you save a recording,
           we store this generated output alongside it.
         </p>
@@ -87,7 +87,7 @@ export default function PrivacyPolicy() {
         <p>We use the information we collect to:</p>
         <ul>
           <li>Provide, operate, and maintain the Service, including your account and practice history;</li>
-          <li>Transcribe and analyze your recordings and scripts to generate AI-powered feedback;</li>
+          <li>Transcribe and analyze your recordings and scripts to generate LLM-powered feedback;</li>
           <li>Respond to support requests and communicate with you about your account or the Service;</li>
           <li>Detect, investigate, and prevent fraud, abuse, and security incidents;</li>
           <li>Comply with legal obligations and enforce our Terms of Service.</li>
@@ -109,7 +109,7 @@ export default function PrivacyPolicy() {
             <strong>Deepgram</strong> — Receives audio recordings to generate transcripts and word-level timing.
           </li>
           <li>
-            <strong>Google (Gemini API and Google Sign-In)</strong> — Receives transcripts and script text to generate AI
+            <strong>Google (Gemini API and Google Sign-In)</strong> — Receives transcripts and script text to generate LLM
             feedback, and, if you choose Google sign-in, handles your sign-in.
           </li>
           <li>
@@ -130,7 +130,7 @@ export default function PrivacyPolicy() {
         <h2>5. What We Do Not Do</h2>
         <ul>
           <li>We do not sell or rent your personal information.</li>
-          <li>We do not use your recordings, transcripts, or scripts to train our own AI models.</li>
+          <li>We do not use your recordings, transcripts, or scripts to train our own LLMs or other models.</li>
           <li>We do not share your recordings with other users.</li>
           <li>We do not use your content for advertising.</li>
         </ul>

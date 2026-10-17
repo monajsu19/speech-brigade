@@ -29,4 +29,4 @@ export function LegalPage({
 }
 
 export const CONTACT_EMAIL = "speechbrigade@gmail.com";
-export const LEGAL_UPDATED = "October 8, 2026";
+export const LEGAL_UPDATED = "October 16, 2026";

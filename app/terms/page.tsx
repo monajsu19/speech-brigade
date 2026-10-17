@@ -55,7 +55,7 @@ export default function TermsOfService() {
           The Service offers free practice tools for speech and debate, including speaking games, timed practice rounds for
           competitive events such as Impromptu and Extemporaneous Speaking, topic and question prompts, and the option to write
           your own topics. You may record your speeches using your device microphone or upload a script. The Service
-          transcribes your recordings and uses artificial intelligence to generate feedback, including scores and suggestions
+          transcribes your recordings and uses a large language model (LLM) to generate feedback, including scores and suggestions
           for improvement.
         </p>
         <p>
@@ -84,7 +84,7 @@ export default function TermsOfService() {
           By submitting User Content, you grant us a worldwide, non-exclusive, royalty-free, sublicensable license to host,
           store, reproduce, transmit, process, analyze, and create derivative works from that content solely for the purpose of
           operating, providing, maintaining, securing, and improving the Service. This includes transmitting your recordings,
-          transcripts, and scripts to our third-party service providers (such as our transcription and AI analysis providers)
+          transcripts, and scripts to our third-party service providers (such as our transcription and LLM analysis providers)
           to generate your feedback.
         </p>
         <p>
@@ -123,10 +123,10 @@ export default function TermsOfService() {
       </section>
 
       <section>
-        <h2>8. AI-Generated Feedback — Not Professional Advice</h2>
+        <h2>8. LLM-Generated Feedback — Not Professional Advice</h2>
         <p>
           Feedback, scores, suggestions, and any other output the Service generates about your speeches are produced in whole
-          or in part by automated systems, including large language models. This output:
+          or in part by automated systems, including large language models (LLMs). This output:
         </p>
         <ul>
           <li>May be inaccurate, incomplete, biased, or inappropriate for your specific context;</li>
@@ -177,7 +177,7 @@ export default function TermsOfService() {
         <p>
           Without limiting the foregoing, we do not warrant that the Service will meet your requirements, operate
           uninterrupted or error-free, be secure, or that any defects will be corrected. We do not warrant the accuracy,
-          reliability, or quality of any AI-generated feedback or any other content made available through the Service. You
+          reliability, or quality of any LLM-generated feedback or any other content made available through the Service. You
           use the Service at your own risk.
         </p>
       </section>
