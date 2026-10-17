@@ -2083,6 +2083,82 @@ function InstructionBlock({ children }: { children: React.ReactNode }) {
   return <div className="instruction-copy">{children}</div>;
 }
 
+type MicrophonePlatform = "ios" | "android" | "desktop";
+
+function microphonePlatform(): MicrophonePlatform {
+  const ua = navigator.userAgent;
+  // iPads report themselves as Macs, so a touch screen gives them away.
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  return "desktop";
+}
+
+const MICROPHONE_STEPS: Record<MicrophonePlatform, { title: string; steps: React.ReactNode[] }> = {
+  ios: {
+    title: "Turn on your microphone (iPhone & iPad)",
+    steps: [
+      <>Tap the <strong>page menu</strong> button (<strong>aA</strong>) next to the web address.</>,
+      <>Tap <strong>Website Settings</strong>, then set <strong>Microphone</strong> to <strong>Allow</strong>.</>,
+      <>Still blocked? Open the <strong>Settings</strong> app, go to <strong>Apps → Safari → Microphone</strong> (or <strong>Safari → Microphone</strong>), and choose <strong>Allow</strong>.</>,
+      <>Come back and tap <strong>Try again</strong>.</>,
+    ],
+  },
+  android: {
+    title: "Turn on your microphone (Android)",
+    steps: [
+      <>Tap the icon to the <strong>left of the web address</strong>.</>,
+      <>Tap <strong>Permissions</strong>, then turn on <strong>Microphone</strong>.</>,
+      <>Still blocked? Open your phone&apos;s <strong>Settings → Apps → Chrome → Permissions → Microphone</strong> and choose <strong>Allow</strong>.</>,
+      <>Come back and tap <strong>Try again</strong>.</>,
+    ],
+  },
+  desktop: {
+    title: "Turn on your microphone",
+    steps: [
+      <>Click the icon to the <strong>left of the web address</strong> (a lock or sliders).</>,
+      <>Set <strong>Microphone</strong> to <strong>Allow</strong>. Reload the page if your browser asks.</>,
+      <>Still blocked? On a Mac, open <strong>System Settings → Privacy &amp; Security → Microphone</strong> and turn on your browser. On Windows, open <strong>Settings → Privacy &amp; security → Microphone</strong>.</>,
+      <>Click <strong>Try again</strong>.</>,
+    ],
+  },
+};
+
+// Shown when the browser has blocked the microphone, with steps for the device in hand.
+function MicrophoneHelp({ onRetry, onClose }: { onRetry: () => void; onClose: () => void }) {
+  const [platform] = useState(microphonePlatform);
+  const { title, steps } = MICROPHONE_STEPS[platform];
+  return (
+    <div className="founders-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="info-modal mic-help"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mic-help-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button className="founders-close" type="button" onClick={onClose} aria-label="Close microphone help">
+          ×
+        </button>
+        <h2 id="mic-help-title">{title}</h2>
+        <p className="mic-help-lead">Your speech can&apos;t be recorded or analyzed until the microphone is allowed for this site.</p>
+        <ol className="mic-help-steps">
+          {steps.map((step, index) => (
+            <li key={index}>{step}</li>
+          ))}
+        </ol>
+        <div className="mic-help-actions">
+          <button className="secondary" type="button" onClick={onClose}>
+            Continue without
+          </button>
+          <button className="primary" type="button" onClick={onRetry}>
+            Try again
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // Rules copy is shared by each event's setup page and the Rules page.
 function ImpromptuRules() {
   return (
@@ -3577,6 +3653,7 @@ export default function SpeechBrigade() {
   );
   const [analyzingStage, setAnalyzingStage] = useState<AnalyzingStage>("uploading");
   const [recordingError, setRecordingError] = useState("");
+  const [micHelpOpen, setMicHelpOpen] = useState(false);
   const [vaultRecordings, setVaultRecordings] = useState<VaultRecording[]>([]);
   const [vaultLoading, setVaultLoading] = useState(false);
   const [vaultError, setVaultError] = useState("");
@@ -4270,6 +4347,22 @@ export default function SpeechBrigade() {
 
   const RECORDING_MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 
+  const isMicrophoneBlocked = (err: unknown) =>
+    err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
+
+  // Asks for the microphone as a timed round starts, so the browser's prompt comes up front, and
+  // explains how to allow it if it's blocked. Rounds that neither analyze nor save skip it.
+  const checkMicrophone = async () => {
+    if (!(speechAnalysisEnabled || saveRecordingEnabled) || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMicHelpOpen(false);
+    } catch (err) {
+      if (isMicrophoneBlocked(err)) setMicHelpOpen(true);
+    }
+  };
+
 	  const startRecording = async () => {
 	    setRecordingError("");
 	    if (!isSupabaseConfigured) {
@@ -4288,6 +4381,7 @@ export default function SpeechBrigade() {
       mediaRecorderRef.current = recorder;
       recorder.start();
     } catch (err) {
+      if (isMicrophoneBlocked(err)) setMicHelpOpen(true);
       setRecordingError(
         err instanceof Error ? err.message : "Microphone access was denied. Analysis will be skipped for this round.",
       );
@@ -4957,6 +5051,7 @@ export default function SpeechBrigade() {
           audio.unlock();
           setImpromptuSplit(impromptuPrepSeconds);
           setRoundTimerStarted(true);
+          void checkMicrophone();
         }}
         onPrepComplete={handlePrepComplete}
         onSpeakComplete={handleDeliveryComplete}
@@ -5902,6 +5997,7 @@ export default function SpeechBrigade() {
               onStart={() => {
                 audio.unlock();
                 setRoundTimerStarted(true);
+                void checkMicrophone();
               }}
               onComplete={handlePrepComplete}
               onWarningSecond={warningTone}
@@ -6312,6 +6408,7 @@ export default function SpeechBrigade() {
           </section>
         </div>
       ) : null}
+      {micHelpOpen ? <MicrophoneHelp onRetry={() => void checkMicrophone()} onClose={() => setMicHelpOpen(false)} /> : null}
       {foundersOpen ? (
         <div
           className="founders-modal-backdrop"

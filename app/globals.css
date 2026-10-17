@@ -5969,3 +5969,42 @@ html[data-keyboard] .auth-form input:focus-visible {
   color: var(--ink);
   text-underline-offset: 0.2em;
 }
+
+/* Microphone help: steps for allowing the microphone on the device in hand. */
+.mic-help {
+  text-align: left;
+}
+
+.mic-help h2 {
+  margin: 0 2rem 0.5rem 0;
+  font-family: var(--display);
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
+.mic-help-lead {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.mic-help-steps {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 1.25rem;
+  padding-left: 1.25rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.mic-help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.mic-help-actions button {
+  width: auto;
+  margin: 0;
+}
