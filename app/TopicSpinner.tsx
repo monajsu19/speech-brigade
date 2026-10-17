@@ -109,8 +109,9 @@ export function TopicSpinner({
     };
   }, []);
 
+  // Callers may pass a fresh array each render, so only a changed list resets the reel.
   useEffect(() => {
-    if (itemsRef.current === items) return;
+    if (itemsRef.current.join("\n") === items.join("\n")) return;
     itemsRef.current = items;
     spinnerRef.current?.setItems(items);
   }, [items]);

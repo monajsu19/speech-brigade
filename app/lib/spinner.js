@@ -65,6 +65,17 @@ function injectCSS(accent) {
   font-weight: 700;
 }
 
+/* Long topics stop at as many lines as fit the item, ending in an ellipsis. The landed item is
+   scaled up 1.35x, so the text keeps to 74% of the width to stay inside the window once scaled. */
+.spinner-item > span {
+  max-width: 74%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--spinner-lines, 2);
+  line-clamp: var(--spinner-lines, 2);
+  overflow: hidden;
+}
+
 .spinner-center-line {
   position: absolute;
   top: 50%;
@@ -160,6 +171,7 @@ export class Spinner {
   _buildDOM() {
     const root = document.createElement('div')
     root.className = 'spinner-root'
+    root.style.setProperty('--spinner-lines', String(this._lineCount()))
 
     const col = document.createElement('div')
     col.className = 'spinner-col'
@@ -202,8 +214,18 @@ export class Spinner {
     this.strip = strip
   }
 
+  // How many lines of text fit an item at the landed item's 1.35x scale.
+  _lineCount() {
+    const size = this.opts.fontSize
+    const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    const fontPx = size.endsWith('rem') ? parseFloat(size) * rootPx : parseFloat(size) || rootPx
+    return Math.max(1, Math.floor(this.opts.itemHeight / (fontPx * 1.2 * 1.35)))
+  }
+
   setItems(items) {
     if (!items || !items.length) return
+    // Swapping the strip mid-spin would empty the window until the reel settles.
+    if (this.isSpinning) return
     this.items = items.slice()
     this.lastIndex = -1
     this._renderInitial()
@@ -242,14 +264,8 @@ export class Spinner {
     const inner = document.createElement('span')
     inner.style.textAlign = 'center'
     inner.setAttribute('dir', 'auto')
-    const words = text.split(/\s+/)
-    if (words.length > 6) {
-      const mid = Math.ceil(words.length / 2)
-      inner.textContent = words.slice(0, mid).join(' ') + '\n' + words.slice(mid).join(' ')
-      inner.style.whiteSpace = 'pre-line'
-    } else {
-      inner.textContent = text
-    }
+    inner.textContent = text
+    inner.title = text
     d.appendChild(inner)
 
     if (isLanding) d.setAttribute('data-landing', 'true')
