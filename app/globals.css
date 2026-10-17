@@ -5163,12 +5163,22 @@ html[data-keyboard] .auth-form input:focus-visible {
   font-size: 0.95rem;
 }
 
+/* The note centers under the whole title rather than the "i", which can sit at the screen's
+   edge on a phone, so it always stays on screen. */
+.title-with-info {
+  position: relative;
+}
+
+.title-tip-anchor {
+  position: static;
+}
+
 .privacy-tip.title-tip {
   right: auto;
   left: 50%;
   display: grid;
   gap: 0.5rem;
-  width: min(340px, 86vw);
+  width: min(340px, calc(100vw - 32px));
   font-family: var(--sans);
   letter-spacing: 0;
   transform: translateX(-50%);
