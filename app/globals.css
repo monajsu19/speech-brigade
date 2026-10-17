@@ -5753,6 +5753,84 @@ html[data-keyboard] .auth-form input:focus-visible {
   opacity: 0.9;
 }
 
+.my-topics-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.my-topics-cancel.small {
+  padding: 0.38rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.my-topics-cancel.small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.my-topics-clear {
+  padding: 0.38rem 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.my-topics-clear:hover {
+  text-decoration: underline;
+}
+
+.my-topics-paste-link {
+  margin-top: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Clear All's Undo, pinned to the bottom of the screen until it times out. */
+.my-topics-undo {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  width: max-content;
+  margin: 0 auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem 0.65rem 1.1rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.875rem;
+  box-shadow: 0 12px 32px rgba(20, 18, 12, 0.22);
+  white-space: nowrap;
+  animation: modalLift 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.my-topics-undo button {
+  padding: 0.3rem 0.8rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
 /* Password sign-in: show/hide toggle, Forgot password, and the sign-up / magic link switches. */
 .auth-forgot {
   justify-self: center;
