@@ -3651,7 +3651,10 @@ export default function SpeechBrigade() {
   // Set when someone arrives from a password reset email, until they choose a new password.
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut">("idle");
-  const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(true);
+  // Speech analysis and Save recording keep whatever was last chosen, round to round and visit to visit.
+  const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(
+    () => typeof window === "undefined" || window.localStorage.getItem(SPEECH_ANALYSIS_KEY) !== "false",
+  );
   const [saveRecordingEnabled, setSaveRecordingEnabled] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("speech-brigade-save-recording") === "true",
   );
@@ -3939,7 +3942,6 @@ export default function SpeechBrigade() {
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
     setLockedChoice("");
-    setSpeechAnalysisEnabled(true);
     setRecordingError("");
   };
 
@@ -3949,7 +3951,6 @@ export default function SpeechBrigade() {
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
     setLockedChoice("");
-    setSpeechAnalysisEnabled(true);
     setRecordingError("");
   };
 
@@ -5071,6 +5072,11 @@ export default function SpeechBrigade() {
         if (enabled) audio.toggleOn();
         else audio.toggleOff();
         setSpeechAnalysisEnabled(enabled);
+        try {
+          window.localStorage.setItem(SPEECH_ANALYSIS_KEY, String(enabled));
+        } catch {
+          // Private browsing can refuse storage; the choice still holds for this visit.
+        }
         setRecordingError("");
       }}
       onSaveRecordingChange={(enabled) => {
