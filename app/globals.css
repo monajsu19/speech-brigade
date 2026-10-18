@@ -6244,6 +6244,66 @@ html[data-keyboard] .auth-form input:focus-visible {
   border-top: 1px solid var(--line);
 }
 
+/* Microphone ask: our own pop-up ahead of the browser's permission prompt. */
+.mic-ask {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  width: min(420px, 100%);
+}
+
+.mic-ask-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 0.25rem;
+  border-radius: 50%;
+  background: rgba(158, 42, 43, 0.1);
+  color: var(--primary, #9e2a2b);
+}
+
+.mic-ask h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.mic-ask p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.mic-ask-actions {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.mic-ask-actions .primary {
+  width: 100%;
+  margin: 0;
+}
+
+.mic-ask-skip {
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.mic-ask-skip:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
 /* Under the Speech analysis and Save recording toggles: opens the microphone steps. */
 .practice-mic-link {
   grid-column: 1 / -1;

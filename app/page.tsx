@@ -2134,6 +2134,39 @@ const MICROPHONE_STEPS: Record<
   },
 };
 
+const MIC_ICON = (
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="9" y="2" width="6" height="12" rx="3" />
+    <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+    <path d="M12 18v4" />
+    <path d="M8 22h8" />
+  </svg>
+);
+
+// Our own ask before the browser's prompt, so students know why it's coming and what to tap.
+function MicrophoneAsk({ onAllow, onSkip }: { onAllow: () => void; onSkip: () => void }) {
+  return (
+    <div className="founders-modal-backdrop" role="presentation">
+      <section className="info-modal mic-ask" role="dialog" aria-modal="true" aria-labelledby="mic-ask-title">
+        <span className="mic-ask-icon">{MIC_ICON}</span>
+        <h2 id="mic-ask-title">Allow Mic Permissions</h2>
+        <p>
+          Speech Brigade analyzes your speeches so you can come back to them later. You can still practice, but will be
+          unable to review your speech if you block microphone access.
+        </p>
+        <div className="mic-ask-actions">
+          <button className="primary" type="button" onClick={onAllow}>
+            Allow microphone
+          </button>
+          <button className="mic-ask-skip" type="button" onClick={onSkip}>
+            Not now
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // Shown when the browser has blocked the microphone, with steps for the device in hand.
 function MicrophoneHelp({ onRetry, onClose }: { onRetry: () => void; onClose: () => void }) {
   const [platform] = useState(microphonePlatform);
@@ -3715,8 +3748,10 @@ export default function SpeechBrigade() {
   const [analyzingStage, setAnalyzingStage] = useState<AnalyzingStage>("uploading");
   const [recordingError, setRecordingError] = useState("");
   const [micHelpOpen, setMicHelpOpen] = useState(false);
-  // Once the microphone is allowed, later rounds don't ask again.
+  const [micAskOpen, setMicAskOpen] = useState(false);
+  // Once the microphone is allowed, or someone chooses Not now, later events don't ask again.
   const micGrantedRef = useRef(false);
+  const micAskSkippedRef = useRef(false);
   // Closing the blocked-microphone steps keeps them from reopening mid-speech.
   const micHelpClosedRef = useRef(false);
   const [vaultRecordings, setVaultRecordings] = useState<VaultRecording[]>([]);
@@ -4395,13 +4430,14 @@ export default function SpeechBrigade() {
   const isMicrophoneBlocked = (err: unknown) =>
     err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
 
-  // Checks the microphone as soon as an event page opens, before any topics are drawn, so a
-  // blocked microphone gets its steps (and any reload they take) before a draw is lost. Events that
-  // neither analyze nor save, and microphones already allowed, skip it.
-  const checkMicrophoneOnOpen = async () => {
+  // Asks for the microphone as soon as an event page opens, before any topics are drawn, so
+  // allowing it (which can take a reload) doesn't cost a draw. Our own pop-up explains why before
+  // the browser asks, and a blocked microphone gets steps to allow it. Events that neither analyze
+  // nor save, and microphones already allowed, skip it.
+  const askForMicrophone = async () => {
     if (!(speechAnalysisEnabled || saveRecordingEnabled) || !navigator.mediaDevices?.getUserMedia) return;
-    if (micGrantedRef.current) return;
-    // Older Safari can't report the permission; its browser prompt comes when prep starts.
+    if (micGrantedRef.current || micAskSkippedRef.current) return;
+    // Older Safari can't report the permission, so it gets the pop-up until it's allowed once.
     let state: PermissionState | "unknown" = "unknown";
     try {
       state = (await navigator.permissions.query({ name: "microphone" as PermissionName })).state;
@@ -4410,12 +4446,13 @@ export default function SpeechBrigade() {
     }
     if (state === "granted") micGrantedRef.current = true;
     else if (state === "denied") setMicHelpOpen(true);
+    else setMicAskOpen(true);
   };
 
   useEffect(() => {
     if (screen !== "impromptuIntro" && screen !== "extempIntro" && screen !== "preparedEventIntro") return undefined;
     // Asked after the page paints, so the pop-up opens over the event page.
-    const id = window.setTimeout(() => void checkMicrophoneOnOpen(), 0);
+    const id = window.setTimeout(() => void askForMicrophone(), 0);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
@@ -4434,8 +4471,10 @@ export default function SpeechBrigade() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
       micGrantedRef.current = true;
+      setMicAskOpen(false);
       setMicHelpOpen(false);
     } catch (err) {
+      setMicAskOpen(false);
       if (isMicrophoneBlocked(err)) setMicHelpOpen(true);
     }
   };
@@ -6435,6 +6474,15 @@ export default function SpeechBrigade() {
             </button>
           </section>
         </div>
+      ) : null}
+      {micAskOpen ? (
+        <MicrophoneAsk
+          onAllow={() => void requestMicrophone()}
+          onSkip={() => {
+            micAskSkippedRef.current = true;
+            setMicAskOpen(false);
+          }}
+        />
       ) : null}
       {micHelpOpen ? (
         <MicrophoneHelp
