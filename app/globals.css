@@ -6335,8 +6335,31 @@ html[data-keyboard] .auth-form input:focus-visible {
   display: none;
 }
 
-/* Phones: Back in the top bar, one-line titles, tighter reels and timers. */
+/* Phones: a compact top bar with Back in it, one-line titles, tighter reels and timers. */
 @media (max-width: 760px) {
+  /* Compact top bar. */
+  .app-shell {
+    padding-top: 0.45rem;
+  }
+
+  .app-header {
+    min-height: 2.6rem;
+    padding: 0.2rem 0;
+  }
+
+  .wordmark-logo {
+    height: 2.1rem;
+  }
+
+  .home-button {
+    min-height: 2rem;
+    padding: 0.38rem 0.62rem;
+  }
+
+  .screen-frame {
+    padding-block: 0.35rem 0.9rem;
+  }
+
   /* Allow Mic Permissions opens in the middle of the screen, not as a bottom sheet. */
   .founders-modal-backdrop:has(.mic-ask) {
     align-items: center;
