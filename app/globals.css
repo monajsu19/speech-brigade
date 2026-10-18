@@ -6329,3 +6329,104 @@ html[data-keyboard] .auth-form input:focus-visible {
 .practice-mic-link:hover {
   color: var(--ink);
 }
+
+/* Back in the top bar is a phone-only placement; desktop keeps Back beside the title. */
+.header-back {
+  display: none;
+}
+
+/* Phones: Back in the top bar, one-line titles, tighter reels and timers. */
+@media (max-width: 760px) {
+  /* Back takes the logo's place in the top bar; the title gets its row to itself. */
+  .app-header .header-back {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    width: auto;
+    min-height: 2rem;
+    margin: 0;
+    font-size: 0.85rem;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+  }
+
+  .app-header.has-back .wordmark,
+  .setup-back {
+    display: none;
+  }
+
+  .setup-title-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setup-title-row h1 {
+    grid-column: 1;
+  }
+
+  /* Event and game titles stay on one line where they fit. */
+  .event-setup .setup-title-row h1 {
+    font-size: min(2rem, 6.6vw);
+    line-height: 1.1;
+  }
+
+  /* Which Is Worse: tighter sides so both scenarios and Start show together. */
+  .topic-spinner-group.row.split {
+    row-gap: 0.9rem;
+  }
+
+  .topic-spinner-side {
+    gap: 0.4rem;
+  }
+
+  .topic-spinner-card.compact:has(.card-spin) {
+    padding: 14px 10px 4px;
+  }
+
+  .topic-spinner-spin.card-spin {
+    margin: 6px 0 8px;
+    padding: 8px 22px;
+  }
+
+  .topic-spinner-group.split + .topic-spinner-actions {
+    margin-top: 1rem;
+  }
+
+  /* Impromptu's three topics sit in a row of three instead of three tall cards. */
+  .topic-spinner-group.row:not(.split) {
+    grid-template-columns: repeat(var(--spinner-count), minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .topic-spinner-group.row:not(.split) .topic-spinner-card.compact {
+    padding: 22px 2px 6px;
+  }
+
+  .topic-spinner-group.row:not(.split) .topic-spinner-card.compact.collapsed {
+    min-height: 72px;
+    padding: 12px 6px;
+  }
+
+  .topic-spinner-group.row:not(.split) .topic-spinner-result {
+    font-size: 0.95rem;
+    overflow-wrap: anywhere;
+  }
+
+  /* The chosen question above the prep timer stays short of the dial. */
+  .round-timer-page .topic-banner strong {
+    font-size: 1.15rem;
+    line-height: 1.25;
+  }
+
+  /* Mic permissions: settings paths read as one line of plain text. */
+  .mic-help-chip {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 0.9rem;
+  }
+
+  .mic-help-arrow {
+    padding: 0 0.3rem;
+  }
+}

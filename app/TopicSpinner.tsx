@@ -211,8 +211,9 @@ export function TopicSpinnerGroup({
         new Spinner({
           container,
           items: itemsRef.current,
-          itemHeight: isPhoneWidth() ? 60 : 84,
-          windowHeight: isPhoneWidth() ? 150 : 210,
+          // Opposing sides (spinEach) get shorter reels on phones, so both fit on one screen.
+          itemHeight: isPhoneWidth() ? (setupRef.current.spinEach ? 52 : 60) : 84,
+          windowHeight: isPhoneWidth() ? (setupRef.current.spinEach ? 124 : 150) : 210,
           fontSize: isPhoneWidth() ? "0.82rem" : "0.9rem",
           color: "#000000",
           accent: TONE_ACCENTS[setupRef.current.tones?.[index] ?? "green"],

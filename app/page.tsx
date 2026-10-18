@@ -55,6 +55,9 @@ const TRANSIENT_SCREENS = new Set<Screen>([
 
 const SPEECH_ANALYSIS_KEY = "speech-brigade-speech-analysis";
 
+// Event and game setup pages, whose Back link sits beside the title on desktop and in the top bar on phones.
+const SETUP_BACK_SCREENS = new Set<Screen>(["gameSetup", "impromptuIntro", "extempIntro", "preparedEventIntro"]);
+
 // Account, Rules, and Recent pages leave out the site footer.
 const FOOTERLESS_SCREENS = new Set<Screen>(["signIn", "settings", "rules", "rulesDetail", "pastSpeeches", "vaultAnalysis"]);
 
@@ -1330,6 +1333,9 @@ const DIAL_SIZE_BASE = 260;
 const DIAL_SIDE_GUTTER = 48;
 const DIAL_HEIGHT_COMPACT = 667;
 const DIAL_HEIGHT_FULL = 780;
+const DIAL_SIZE_PHONE = 230;
+// Matches the stylesheet's phone breakpoint.
+const PHONE_MAX_WIDTH = 760;
 
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -1355,7 +1361,9 @@ function useDialGeometry() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const t = Math.min(1, Math.max(0, (windowHeight - DIAL_HEIGHT_COMPACT) / (DIAL_HEIGHT_FULL - DIAL_HEIGHT_COMPACT)));
-  const size = Math.min(windowWidth - DIAL_SIDE_GUTTER, Math.round(DIAL_SIZE_COMPACT + (DIAL_SIZE_FULL - DIAL_SIZE_COMPACT) * t));
+  const fitted = Math.round(DIAL_SIZE_COMPACT + (DIAL_SIZE_FULL - DIAL_SIZE_COMPACT) * t);
+  // Phones get a smaller dial so the topic, dial, and buttons share one screen.
+  const size = Math.min(windowWidth - DIAL_SIDE_GUTTER, windowWidth <= PHONE_MAX_WIDTH ? DIAL_SIZE_PHONE : fitted);
   const scale = size / DIAL_SIZE_BASE;
   const radius = size * (DIAL_RADIUS_FULL / DIAL_SIZE_FULL);
   return {
@@ -6405,7 +6413,7 @@ export default function SpeechBrigade() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-	      <header className="app-header" ref={headerRef}>
+	      <header className={`app-header ${SETUP_BACK_SCREENS.has(screen) ? "has-back" : ""}`} ref={headerRef}>
 	        {screen === "landing" ? (
 	          <>
 	            <div className="header-spacer" />
@@ -6413,6 +6421,12 @@ export default function SpeechBrigade() {
 	          </>
 	        ) : (
 	          <>
+	            {/* Phones show Back here in place of the logo; desktop keeps it beside the title. */}
+	            {SETUP_BACK_SCREENS.has(screen) ? (
+	              <button className="back-link header-back" type="button" onClick={goBack}>
+	                ← Back
+	              </button>
+	            ) : null}
 	            <button className="wordmark" type="button" onClick={goHome} aria-label="Mojo Speech Prep, return home">
 	              <Image
 	                unoptimized
