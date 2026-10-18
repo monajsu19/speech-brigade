@@ -6337,6 +6337,11 @@ html[data-keyboard] .auth-form input:focus-visible {
 
 /* Phones: Back in the top bar, one-line titles, tighter reels and timers. */
 @media (max-width: 760px) {
+  /* Allow Mic Permissions opens in the middle of the screen, not as a bottom sheet. */
+  .founders-modal-backdrop:has(.mic-ask) {
+    align-items: center;
+  }
+
   /* Back takes the logo's place in the top bar; the title gets its row to itself. */
   .app-header .header-back {
     display: inline-flex;
