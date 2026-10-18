@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SiteFooter } from "../SiteFooter";
 
 // Shared frame for the Privacy Policy and Terms of Service pages.
 export function LegalPage({
@@ -24,6 +25,7 @@ export function LegalPage({
         <p className="legal-updated">Last updated: {updated}</p>
       </header>
       <div className="legal-body">{children}</div>
+      <SiteFooter />
     </main>
   );
 }

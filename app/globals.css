@@ -5984,7 +5984,25 @@ html[data-keyboard] .auth-form input:focus-visible {
 
 .home-footer-founders {
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 400;
+}
+
+/* The two founders' faces, overlapping, ahead of "Meet the founders". */
+.footer-founder-faces {
+  display: inline-flex;
+  margin-right: 0.15rem;
+}
+
+.footer-founder-faces img {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.footer-founder-faces img + img {
+  margin-left: -8px;
 }
 
 .home-footer-tip:hover,
@@ -6009,11 +6027,12 @@ html[data-keyboard] .auth-form input:focus-visible {
   min-height: 32px;
   padding: 0 0.25rem;
   color: var(--muted);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .home-footer-legal a:hover {
-  text-decoration: underline;
+  color: var(--ink);
 }
 
 /* Privacy Policy and Terms of Service pages. */
@@ -6135,4 +6154,10 @@ html[data-keyboard] .auth-form input:focus-visible {
 .mic-help-actions button {
   width: auto;
   margin: 0;
+}
+
+.legal-page .home-footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
 }

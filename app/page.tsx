@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
 import { MyTopics } from "./MyTopics";
+import { SiteFooter } from "./SiteFooter";
 import { TopicSpinner, TopicSpinnerGroup } from "./TopicSpinner";
 
 type EventMode = "impromptu" | "extemp";
@@ -51,6 +52,11 @@ const TRANSIENT_SCREENS = new Set<Screen>([
   "reviewSpeech",
   "analyzing",
 ]);
+
+const SPEECH_ANALYSIS_KEY = "speech-brigade-speech-analysis";
+
+// Account, Rules, and Recent pages leave out the site footer.
+const FOOTERLESS_SCREENS = new Set<Screen>(["signIn", "settings", "rules", "rulesDetail", "pastSpeeches", "vaultAnalysis"]);
 
 // Where Back goes when the browser history can't be trusted to hold the previous screen.
 const PARENT_SCREENS: Partial<Record<Screen, Screen>> = {
@@ -3663,6 +3669,13 @@ export default function SpeechBrigade() {
   const [vaultFilters, setVaultFilters] = useState<VaultFilters>(DEFAULT_VAULT_FILTERS);
   const vaultFiltersActive = JSON.stringify(vaultFilters) !== JSON.stringify(DEFAULT_VAULT_FILTERS);
   const [foundersOpen, setFoundersOpen] = useState(false);
+  // The Privacy and Terms pages link to /#founders to open the founders popup here.
+  useEffect(() => {
+    if (window.location.hash !== "#founders") return;
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    const id = window.setTimeout(() => setFoundersOpen(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
   const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
   const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<SpeakingGameId | null>(null);
@@ -6290,32 +6303,7 @@ export default function SpeechBrigade() {
       <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={round.mode === "impromptu" && (screen === "planSpeech" || screen === "recordSpeech") ? "impromptuRound" : screen}>
         {content}
       </div>
-      {screen === "landing" ? (
-        // A quiet footer for the tip jar and the founders, so nothing floats over the page on phones.
-        <footer className="home-footer">
-          <a
-            className="home-footer-tip"
-            href="https://buymeacoffee.com/speechbrigade"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Leave a tip to keep Speech Brigade free"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-            </svg>
-            Leave a tip
-          </a>
-          <span aria-hidden="true">·</span>
-          <button className="home-footer-founders" type="button" onClick={() => setFoundersOpen(true)}>
-            Meet the founders
-          </button>
-          <span className="home-footer-legal">
-            <a href="/privacy/">Privacy</a>
-            <span aria-hidden="true">·</span>
-            <a href="/terms/">Terms</a>
-          </span>
-        </footer>
-      ) : null}
+      {FOOTERLESS_SCREENS.has(screen) ? null : <SiteFooter onMeetFounders={() => setFoundersOpen(true)} />}
       {infoModal ? (
         <div
           className="founders-modal-backdrop"
