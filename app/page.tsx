@@ -5383,6 +5383,7 @@ export default function SpeechBrigade() {
                     ]}
                     tones={["blue", "green"]}
                     spinEach
+                    spinAllLabel="Spin both"
                     landInitial
                     onSpinStart={startGameReveal}
                     onLand={(scenarios) => {
