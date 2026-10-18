@@ -3635,12 +3635,10 @@ export default function SpeechBrigade() {
   const [authEmail, setAuthEmail] = useState("");
   const [authStatus, setAuthStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [authError, setAuthError] = useState("");
-  // Passwords are the main way in; a magic link stays available for anyone without one.
-  const [authMethod, setAuthMethod] = useState<"password" | "magicLink">("password");
   const [authMode, setAuthMode] = useState<"signIn" | "signUp">("signIn");
   const [authPassword, setAuthPassword] = useState("");
   const [showAuthPassword, setShowAuthPassword] = useState(false);
-  const [authSentKind, setAuthSentKind] = useState<"magicLink" | "confirm" | "reset">("magicLink");
+  const [authSentKind, setAuthSentKind] = useState<"confirm" | "reset">("confirm");
   const [authNeedsConfirm, setAuthNeedsConfirm] = useState(false);
   // Shown on the main button while a reset or confirmation email sends, instead of "Signing in…".
   const [authBusyLabel, setAuthBusyLabel] = useState("");
@@ -4146,30 +4144,6 @@ export default function SpeechBrigade() {
     setScreen("gameSetup");
   };
 
-  const sendMagicLink = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!supabase) {
-      setAuthStatus("error");
-      setAuthError("Supabase is not configured for this local preview.");
-      return;
-    }
-    if (!authEmail.trim()) return;
-    setAuthStatus("sending");
-    setAuthError("");
-    const { error } = await supabase.auth.signInWithOtp({
-      email: authEmail.trim(),
-      options: {
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-    if (error) {
-      showAuthError(friendlyAuthError(error.message));
-      return;
-    }
-    setAuthSentKind("magicLink");
-    setAuthStatus("sent");
-  };
-
   const authRedirectUrl = () => (typeof window !== "undefined" ? window.location.origin : undefined);
 
   const showAuthError = (message: string) => {
@@ -4290,7 +4264,6 @@ export default function SpeechBrigade() {
 
   const switchAuthMode = (mode: "signIn" | "signUp") => {
     setAuthMode(mode);
-    setAuthMethod("password");
     setAuthStatus("idle");
     setAuthError("");
     setAuthNeedsConfirm(false);
@@ -5609,10 +5582,6 @@ export default function SpeechBrigade() {
           </button>
         );
         const sentCopy = {
-          magicLink: {
-            lede: "We sent you a sign-in link.",
-            body: <>Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here, signed in.</>,
-          },
           confirm: {
             lede: "One more step to create your account.",
             body: <>We sent a confirmation link to <strong>{authEmail}</strong>. Open it to finish creating your account, and it will bring you right back here, signed in. If it isn&apos;t there in a minute, check your spam folder.</>,
@@ -5715,7 +5684,7 @@ export default function SpeechBrigade() {
                 <div className="auth-divider">
                   <span>or</span>
                 </div>
-                <form className="auth-form" onSubmit={authMethod === "password" ? submitPassword : sendMagicLink}>
+                <form className="auth-form" onSubmit={submitPassword}>
                   <div className="auth-field">
                     <label htmlFor="auth-email">Email</label>
                     <input
@@ -5728,40 +5697,34 @@ export default function SpeechBrigade() {
                       onChange={(event) => setAuthEmail(event.target.value)}
                     />
                   </div>
-                  {authMethod === "password" ? (
-                    <div className="auth-field">
-                      <label htmlFor="auth-password">Password</label>
-                      <div className="auth-password-input">
-                        <input
-                          id="auth-password"
-                          type={showAuthPassword ? "text" : "password"}
-                          required
-                          minLength={authMode === "signUp" ? 6 : undefined}
-                          autoComplete={authMode === "signUp" ? "new-password" : "current-password"}
-                          placeholder={authMode === "signUp" ? "At least 6 characters" : undefined}
-                          value={authPassword}
-                          onChange={(event) => setAuthPassword(event.target.value)}
-                        />
-                        {passwordToggle}
-                      </div>
+                  <div className="auth-field">
+                    <label htmlFor="auth-password">Password</label>
+                    <div className="auth-password-input">
+                      <input
+                        id="auth-password"
+                        type={showAuthPassword ? "text" : "password"}
+                        required
+                        minLength={authMode === "signUp" ? 6 : undefined}
+                        autoComplete={authMode === "signUp" ? "new-password" : "current-password"}
+                        placeholder={authMode === "signUp" ? "At least 6 characters" : undefined}
+                        value={authPassword}
+                        onChange={(event) => setAuthPassword(event.target.value)}
+                      />
+                      {passwordToggle}
                     </div>
-                  ) : null}
+                  </div>
                   <button className="auth-primary-button" type="submit" disabled={authStatus === "sending"}>
                     {authStatus === "sending"
                       ? authBusyLabel
                         ? authBusyLabel
-                        : authMethod === "magicLink"
-                          ? "Sending…"
-                          : authMode === "signUp"
-                            ? "Creating account…"
-                            : "Signing in…"
-                      : authMethod === "magicLink"
-                        ? "Email me a magic link"
                         : authMode === "signUp"
-                          ? "Create account"
-                          : "Sign in"}
+                          ? "Creating account…"
+                          : "Signing in…"
+                      : authMode === "signUp"
+                        ? "Create account"
+                        : "Sign in"}
                   </button>
-                  {authMethod === "password" && authMode === "signIn" ? (
+                  {authMode === "signIn" ? (
                     <button
                       type="button"
                       className="auth-text-button auth-forgot"
@@ -5779,11 +5742,7 @@ export default function SpeechBrigade() {
                   ) : null}
                 </form>
                 <div className="auth-switches">
-                  {authMethod === "magicLink" ? (
-                    <button type="button" className="auth-text-button" onClick={() => switchAuthMode("signIn")}>
-                      Use a password instead
-                    </button>
-                  ) : authMode === "signIn" ? (
+                  {authMode === "signIn" ? (
                     <p>
                       New here?{" "}
                       <button type="button" className="auth-text-button" onClick={() => switchAuthMode("signUp")}>
@@ -5798,20 +5757,6 @@ export default function SpeechBrigade() {
                       </button>
                     </p>
                   )}
-                  {authMethod === "password" ? (
-                    <button
-                      type="button"
-                      className="auth-text-button muted"
-                      onClick={() => {
-                        setAuthMethod("magicLink");
-                        setAuthStatus("idle");
-                        setAuthError("");
-                        setAuthNeedsConfirm(false);
-                      }}
-                    >
-                      Email me a sign-in link instead
-                    </button>
-                  ) : null}
                 </div>
               </>
             )}
