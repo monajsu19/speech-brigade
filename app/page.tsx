@@ -1559,7 +1559,8 @@ function TimerPanel({
           step={EVENT_DIAL_STEP_SECONDS}
         />
         {presetsAbove ? null : presetTabs}
-        {pausable ? (
+        {/* Pause and Stop take Start's place once the timer runs. */}
+        {pausable && active ? (
           <div className="timer-controls">
             <button
               className="timer-control"
