@@ -5588,7 +5588,7 @@ export default function SpeechBrigade() {
               </button>
               <h1>{selectedPreparedEvent.name}</h1>
             </div>
-            <RulesLink label="Rules" onOpen={() => openRules(selectedPreparedEvent.id)} />
+            <RulesLink label="How it works" onOpen={() => openRules(selectedPreparedEvent.id)} />
             <div className="input-mode-tabs" role="tablist" aria-label="How to practice">
               {([
                 ["speak", "Speak"],
