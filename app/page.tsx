@@ -2099,32 +2099,37 @@ function microphonePlatform(): MicrophonePlatform {
   return "desktop";
 }
 
-const MICROPHONE_STEPS: Record<MicrophonePlatform, { title: string; steps: React.ReactNode[] }> = {
+// Allowing the microphone for this site, then, if it's still blocked, the device's own settings.
+// Each settings path shows one tap per step.
+const MICROPHONE_STEPS: Record<
+  MicrophonePlatform,
+  { steps: React.ReactNode[]; stillBlocked: { device: string; path: string[]; then: string }[] }
+> = {
   ios: {
-    title: "Turn on your microphone (iPhone & iPad)",
     steps: [
-      <>Tap the <strong>page menu</strong> button (<strong>aA</strong>) next to the web address.</>,
-      <>Tap <strong>Website Settings</strong>, then set <strong>Microphone</strong> to <strong>Allow</strong>.</>,
-      <>Still blocked? Open the <strong>Settings</strong> app, go to <strong>Apps → Safari → Microphone</strong> (or <strong>Safari → Microphone</strong>), and choose <strong>Allow</strong>.</>,
-      <>Come back and tap <strong>Try again</strong>.</>,
+      <>Tap <strong>aA</strong> next to the web address.</>,
+      <>Tap <strong>Website Settings</strong>.</>,
+      <>Set <strong>Microphone</strong> to <strong>Allow</strong>.</>,
     ],
+    stillBlocked: [{ device: "iPhone & iPad", path: ["Settings", "Apps", "Safari", "Microphone"], then: "Choose Allow" }],
   },
   android: {
-    title: "Turn on your microphone (Android)",
     steps: [
-      <>Tap the icon to the <strong>left of the web address</strong>.</>,
-      <>Tap <strong>Permissions</strong>, then turn on <strong>Microphone</strong>.</>,
-      <>Still blocked? Open your phone&apos;s <strong>Settings → Apps → Chrome → Permissions → Microphone</strong> and choose <strong>Allow</strong>.</>,
-      <>Come back and tap <strong>Try again</strong>.</>,
+      <>Tap the icon <strong>left of the web address</strong>.</>,
+      <>Tap <strong>Permissions</strong>.</>,
+      <>Turn on <strong>Microphone</strong>.</>,
     ],
+    stillBlocked: [{ device: "Android", path: ["Settings", "Apps", "Chrome", "Permissions", "Microphone"], then: "Choose Allow" }],
   },
   desktop: {
-    title: "Turn on your microphone",
     steps: [
-      <>Click the icon to the <strong>left of the web address</strong> (a lock or sliders).</>,
-      <>Set <strong>Microphone</strong> to <strong>Allow</strong>. Reload the page if your browser asks.</>,
-      <>Still blocked? On a Mac, open <strong>System Settings → Privacy &amp; Security → Microphone</strong> and turn on your browser. On Windows, open <strong>Settings → Privacy &amp; security → Microphone</strong>.</>,
-      <>Click <strong>Try again</strong>.</>,
+      <>Click the icon <strong>left of the web address</strong>.</>,
+      <>Set <strong>Microphone</strong> to <strong>Allow</strong>.</>,
+      <>Reload the page if asked.</>,
+    ],
+    stillBlocked: [
+      { device: "Mac", path: ["System Settings", "Privacy & Security", "Microphone"], then: "Turn on your browser" },
+      { device: "Windows", path: ["Settings", "Privacy & security", "Microphone"], then: "Turn on your browser" },
     ],
   },
 };
@@ -2132,7 +2137,28 @@ const MICROPHONE_STEPS: Record<MicrophonePlatform, { title: string; steps: React
 // Shown when the browser has blocked the microphone, with steps for the device in hand.
 function MicrophoneHelp({ onRetry, onClose }: { onRetry: () => void; onClose: () => void }) {
   const [platform] = useState(microphonePlatform);
-  const { title, steps } = MICROPHONE_STEPS[platform];
+  const { steps, stillBlocked } = MICROPHONE_STEPS[platform];
+  // The title shows whether this site can use the microphone right now, and follows changes made
+  // while it's open. Browsers that can't report it just say "Mic permissions".
+  const [micState, setMicState] = useState<"On" | "Off" | null>(null);
+  useEffect(() => {
+    let status: PermissionStatus | null = null;
+    let cancelled = false;
+    const update = () => setMicState(status?.state === "granted" ? "On" : "Off");
+    navigator.permissions
+      ?.query({ name: "microphone" as PermissionName })
+      .then((result) => {
+        if (cancelled) return;
+        status = result;
+        update();
+        status.addEventListener("change", update);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      status?.removeEventListener("change", update);
+    };
+  }, []);
   return (
     <div className="founders-modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -2145,16 +2171,36 @@ function MicrophoneHelp({ onRetry, onClose }: { onRetry: () => void; onClose: ()
         <button className="founders-close" type="button" onClick={onClose} aria-label="Close microphone help">
           ×
         </button>
-        <h2 id="mic-help-title">{title}</h2>
+        <h2 id="mic-help-title">Mic permissions{micState ? `: ${micState}` : ""}</h2>
         <p className="mic-help-lead">Your speech can&apos;t be recorded or analyzed until the microphone is allowed for this site.</p>
         <ol className="mic-help-steps">
           {steps.map((step, index) => (
-            <li key={index}>{step}</li>
+            <li key={index}>
+              <span className="mic-help-number" aria-hidden="true">{index + 1}</span>
+              <span>{step}</span>
+            </li>
           ))}
         </ol>
+        <div className="mic-help-blocked">
+          <h3>Still blocked?</h3>
+          {stillBlocked.map(({ device, path, then }) => (
+            <div className="mic-help-device" key={device}>
+              <span className="mic-help-device-name">{device}</span>
+              <span className="mic-help-path">
+                {path.map((part, index) => (
+                  <span key={part}>
+                    {index > 0 ? <span className="mic-help-arrow" aria-hidden="true">›</span> : null}
+                    <span className="mic-help-chip">{part}</span>
+                  </span>
+                ))}
+              </span>
+              <span className="mic-help-then">{then}</span>
+            </div>
+          ))}
+        </div>
         <div className="mic-help-actions">
           <button className="secondary" type="button" onClick={onClose}>
-            Continue without
+            Continue
           </button>
           <button className="primary" type="button" onClick={onRetry}>
             Try again
@@ -2335,11 +2381,14 @@ function PracticePrivacyOptions({
   saveRecordingEnabled,
   onAnalysisChange,
   onSaveRecordingChange,
+  onMicHelp,
 }: {
   analysisEnabled: boolean;
   saveRecordingEnabled: boolean;
   onAnalysisChange: (enabled: boolean) => void;
   onSaveRecordingChange: (enabled: boolean) => void;
+  // Opens the steps for allowing the microphone.
+  onMicHelp?: () => void;
 }) {
   return (
     <div className="practice-options">
@@ -2354,6 +2403,11 @@ function PracticePrivacyOptions({
         onChange={onSaveRecordingChange}
         info={<PrivacyInfoButton />}
       />
+      {onMicHelp ? (
+        <button className="practice-mic-link" type="button" onClick={onMicHelp}>
+          Mic permissions
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -3661,6 +3715,10 @@ export default function SpeechBrigade() {
   const [analyzingStage, setAnalyzingStage] = useState<AnalyzingStage>("uploading");
   const [recordingError, setRecordingError] = useState("");
   const [micHelpOpen, setMicHelpOpen] = useState(false);
+  // Once the microphone is allowed, later rounds don't ask again.
+  const micGrantedRef = useRef(false);
+  // Closing the blocked-microphone steps keeps them from reopening mid-speech.
+  const micHelpClosedRef = useRef(false);
   const [vaultRecordings, setVaultRecordings] = useState<VaultRecording[]>([]);
   const [vaultLoading, setVaultLoading] = useState(false);
   const [vaultError, setVaultError] = useState("");
@@ -4337,13 +4395,45 @@ export default function SpeechBrigade() {
   const isMicrophoneBlocked = (err: unknown) =>
     err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
 
-  // Asks for the microphone as a timed round starts, so the browser's prompt comes up front, and
-  // explains how to allow it if it's blocked. Rounds that neither analyze nor save skip it.
-  const checkMicrophone = async () => {
+  // Checks the microphone as soon as an event page opens, before any topics are drawn, so a
+  // blocked microphone gets its steps (and any reload they take) before a draw is lost. Events that
+  // neither analyze nor save, and microphones already allowed, skip it.
+  const checkMicrophoneOnOpen = async () => {
     if (!(speechAnalysisEnabled || saveRecordingEnabled) || !navigator.mediaDevices?.getUserMedia) return;
+    if (micGrantedRef.current) return;
+    // Older Safari can't report the permission; its browser prompt comes when prep starts.
+    let state: PermissionState | "unknown" = "unknown";
+    try {
+      state = (await navigator.permissions.query({ name: "microphone" as PermissionName })).state;
+    } catch {
+      state = "unknown";
+    }
+    if (state === "granted") micGrantedRef.current = true;
+    else if (state === "denied") setMicHelpOpen(true);
+  };
+
+  useEffect(() => {
+    if (screen !== "impromptuIntro" && screen !== "extempIntro" && screen !== "preparedEventIntro") return undefined;
+    // Asked after the page paints, so the pop-up opens over the event page.
+    const id = window.setTimeout(() => void checkMicrophoneOnOpen(), 0);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
+
+  // Pressing Start prep asks the browser for the microphone right away, while prep runs, so a
+  // blocked microphone shows its steps during prep rather than once speaking starts.
+  const requestMicrophoneForPrep = () => {
+    if (!(speechAnalysisEnabled || saveRecordingEnabled) || !navigator.mediaDevices?.getUserMedia) return;
+    if (micGrantedRef.current) return;
+    void requestMicrophone();
+  };
+
+  // Brings up the browser's own prompt; a blocked microphone opens the steps to allow it.
+  const requestMicrophone = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
+      micGrantedRef.current = true;
       setMicHelpOpen(false);
     } catch (err) {
       if (isMicrophoneBlocked(err)) setMicHelpOpen(true);
@@ -4368,7 +4458,7 @@ export default function SpeechBrigade() {
       mediaRecorderRef.current = recorder;
       recorder.start();
     } catch (err) {
-      if (isMicrophoneBlocked(err)) setMicHelpOpen(true);
+      if (isMicrophoneBlocked(err) && !micHelpClosedRef.current) setMicHelpOpen(true);
       setRecordingError(
         err instanceof Error ? err.message : "Microphone access was denied. Analysis will be skipped for this round.",
       );
@@ -5038,7 +5128,7 @@ export default function SpeechBrigade() {
           audio.unlock();
           setImpromptuSplit(impromptuPrepSeconds);
           setRoundTimerStarted(true);
-          void checkMicrophone();
+          if (screen === "planSpeech") requestMicrophoneForPrep();
         }}
         onPrepComplete={handlePrepComplete}
         onSpeakComplete={handleDeliveryComplete}
@@ -5085,6 +5175,7 @@ export default function SpeechBrigade() {
         setSaveRecordingEnabled(enabled);
         setRecordingError("");
       }}
+      onMicHelp={() => setMicHelpOpen(true)}
     />
   );
 
@@ -5959,7 +6050,7 @@ export default function SpeechBrigade() {
               onStart={() => {
                 audio.unlock();
                 setRoundTimerStarted(true);
-                void checkMicrophone();
+                requestMicrophoneForPrep();
               }}
               onComplete={handlePrepComplete}
               onWarningSecond={warningTone}
@@ -6345,7 +6436,15 @@ export default function SpeechBrigade() {
           </section>
         </div>
       ) : null}
-      {micHelpOpen ? <MicrophoneHelp onRetry={() => void checkMicrophone()} onClose={() => setMicHelpOpen(false)} /> : null}
+      {micHelpOpen ? (
+        <MicrophoneHelp
+          onRetry={() => void requestMicrophone()}
+          onClose={() => {
+            micHelpClosedRef.current = true;
+            setMicHelpOpen(false);
+          }}
+        />
+      ) : null}
       {foundersOpen ? (
         <div
           className="founders-modal-backdrop"

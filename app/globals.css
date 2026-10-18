@@ -6122,11 +6122,14 @@ html[data-keyboard] .auth-form input:focus-visible {
   text-align: left;
 }
 
+/* One line, overriding the info popup's narrow headline; room on the right for the close button. */
 .mic-help h2 {
-  margin: 0 2rem 0.5rem 0;
+  max-width: none;
+  margin: 0 3rem 0.5rem 0;
   font-family: var(--display);
-  font-size: 1.4rem;
+  font-size: clamp(1.25rem, 5vw, 1.6rem);
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .mic-help-lead {
@@ -6137,11 +6140,90 @@ html[data-keyboard] .auth-form input:focus-visible {
 
 .mic-help-steps {
   display: grid;
-  gap: 0.6rem;
-  margin: 0 0 1.25rem;
-  padding-left: 1.25rem;
-  font-size: 0.92rem;
-  line-height: 1.45;
+  gap: 0.85rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.mic-help-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mic-help-number {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: rgba(158, 42, 43, 0.1);
+  color: var(--primary, #9e2a2b);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* Still blocked? Each device on its own row, its settings path as one chip per tap. */
+.mic-help-blocked {
+  display: grid;
+  gap: 1rem;
+  margin: 0 0 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.mic-help-blocked h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.mic-help-device {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.mic-help-device-name {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mic-help-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0;
+}
+
+.mic-help-path > span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.mic-help-chip {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--ivory);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mic-help-arrow {
+  padding: 0 0.35rem;
+  color: var(--muted);
+}
+
+.mic-help-then {
+  font-size: 0.9rem;
 }
 
 .mic-help-actions {
@@ -6160,4 +6242,22 @@ html[data-keyboard] .auth-form input:focus-visible {
   margin-top: 3rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--line);
+}
+
+/* Under the Speech analysis and Save recording toggles: opens the microphone steps. */
+.practice-mic-link {
+  grid-column: 1 / -1;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.practice-mic-link:hover {
+  color: var(--ink);
 }
