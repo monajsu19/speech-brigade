@@ -5812,9 +5812,21 @@ export default function SpeechBrigade() {
             ) : authStatus === "sent" ? (
               <div className="auth-sent">
                 <p>{sentCopy.body}</p>
-                <button className="secondary" type="button" onClick={() => setAuthStatus("idle")}>
-                  {authSentKind === "confirm" ? "Back to sign in" : "Use a different email"}
+                <button className="secondary" type="button" onClick={() => switchAuthMode("signIn")}>
+                  Back to sign in
                 </button>
+                {authSentKind === "reset" ? (
+                  <button
+                    className="auth-text-button"
+                    type="button"
+                    onClick={() => {
+                      setAuthEmail("");
+                      switchAuthMode("signIn");
+                    }}
+                  >
+                    Use a different email
+                  </button>
+                ) : null}
               </div>
             ) : (
               <>

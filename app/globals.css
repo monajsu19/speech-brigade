@@ -2562,6 +2562,13 @@ html[data-keyboard] .auth-form input:focus-visible {
   color: var(--muted);
 }
 
+/* Back to sign in, with Use a different email under it. */
+.auth-sent {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+}
+
 .recording-notice {
   display: inline-flex;
   align-items: center;
