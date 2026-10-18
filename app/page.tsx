@@ -5218,6 +5218,13 @@ export default function SpeechBrigade() {
     />
   );
 
+  // Timer, prep, and speaking screens leave the footer off so only the round shows.
+  const roundInProgress =
+    screen === "planSpeech" ||
+    screen === "recordSpeech" ||
+    screen === "gameRounds" ||
+    (screen === "preparedEventIntro" && preparedStage === "performance");
+
   const content = (() => {
     switch (screen) {
       case "landing":
@@ -6456,7 +6463,7 @@ export default function SpeechBrigade() {
       <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={round.mode === "impromptu" && (screen === "planSpeech" || screen === "recordSpeech") ? "impromptuRound" : screen}>
         {content}
       </div>
-      {FOOTERLESS_SCREENS.has(screen) ? null : <SiteFooter onMeetFounders={() => setFoundersOpen(true)} />}
+      {FOOTERLESS_SCREENS.has(screen) || roundInProgress ? null : <SiteFooter onMeetFounders={() => setFoundersOpen(true)} />}
       {infoModal ? (
         <div
           className="founders-modal-backdrop"
