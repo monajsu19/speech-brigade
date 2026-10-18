@@ -26,13 +26,38 @@ type ModalView =
   | { kind: "delete"; topic: UserTopic }
   | { kind: "clear" };
 
-// One topic per line of a pasted list. Bullets and numbering ("-", "•", "1.", "2)") are dropped,
-// and blank lines, repeats, and topics already saved are skipped.
-function parseTopicList(pasted: string, existing: string[]) {
+type TopicSeparator = "newline" | "comma" | "tab" | "custom";
+
+const SEPARATOR_OPTIONS: { value: TopicSeparator; label: string }[] = [
+  { value: "newline", label: "New line" },
+  { value: "comma", label: "Comma" },
+  { value: "tab", label: "Tab" },
+  { value: "custom", label: "Other…" },
+];
+
+function separatorPlaceholder(separator: TopicSeparator, custom: string, noun: string) {
+  const items = [`First ${noun}`, `Second ${noun}`, `Third ${noun}`];
+  if (separator === "comma") return items.join(", ");
+  if (separator === "tab") return items.join("\t");
+  if (separator === "custom" && custom) return items.join(` ${custom} `);
+  return items.join("\n");
+}
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Splits a pasted list on the chosen separator. Line breaks always split too, so a comma or tab
+// list pasted over several lines still works. Bullets and numbering ("-", "•", "1.", "2)") are
+// dropped, and blank entries, repeats, and topics already saved are skipped.
+function parseTopicList(pasted: string, existing: string[], separator: TopicSeparator, custom: string) {
+  const extra =
+    separator === "comma" ? "," : separator === "tab" ? "\t" : separator === "custom" && custom ? custom : "";
+  const splitter = new RegExp(extra ? `\\r?\\n|${escapeRegExp(extra)}` : "\\r?\\n");
   const seen = new Set(existing.map((text) => text.toLowerCase()));
   const fresh: string[] = [];
   let tooLong = 0;
-  for (const line of pasted.split(/\r?\n/)) {
+  for (const line of pasted.split(splitter)) {
     const text = line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").trim();
     if (!text) continue;
     if (text.length > TOPIC_CHAR_LIMIT) {
@@ -81,6 +106,8 @@ export function MyTopics({
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
   const [bulkDraft, setBulkDraft] = useState("");
+  const [separator, setSeparator] = useState<TopicSeparator>("newline");
+  const [customSeparator, setCustomSeparator] = useState("");
   // Topics removed by Clear All, kept until the Undo window closes.
   const [cleared, setCleared] = useState<UserTopic[] | null>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -165,7 +192,7 @@ export function MyTopics({
   const topicTexts = useMemo(() => topics.map((topic) => topic.text), [topics]);
   const atLimit = topics.length >= TOPIC_COUNT_LIMIT;
   const slotsLeft = TOPIC_COUNT_LIMIT - topics.length;
-  const bulk = parseTopicList(bulkDraft, topicTexts);
+  const bulk = parseTopicList(bulkDraft, topicTexts, separator, customSeparator);
   const bulkAdding = bulk.fresh.slice(0, slotsLeft);
   const bulkOverCap = bulk.fresh.length - bulkAdding.length;
 
@@ -236,10 +263,8 @@ export function MyTopics({
         </p>
       ) : topics.length === 0 ? (
         <div className="my-topics-empty">
-          <h2>No topics yet</h2>
-          <p>Add your own topics, like the themes announced before a tournament, and spin through them anytime.</p>
           <button className="primary" type="button" onClick={() => openModal({ kind: "edit", topic: null })}>
-            + Create your first topic
+            + Add a topic
           </button>
           <button className="text-button my-topics-paste-link" type="button" onClick={() => openModal({ kind: "bulk" })}>
             or paste a list
@@ -354,11 +379,34 @@ export function MyTopics({
               </div>
             ) : modal.kind === "bulk" ? (
               <div className="my-topics-form">
-                <p>Paste your topics, one per line.</p>
+                <div className="my-topics-separator">
+                  <label htmlFor="my-topics-separator">Separate topics by</label>
+                  <select
+                    id="my-topics-separator"
+                    value={separator}
+                    onChange={(changeEvent) => setSeparator(changeEvent.target.value as TopicSeparator)}
+                  >
+                    {SEPARATOR_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {separator === "custom" ? (
+                    <input
+                      type="text"
+                      aria-label="Separator"
+                      placeholder="e.g. ;"
+                      maxLength={10}
+                      value={customSeparator}
+                      onChange={(changeEvent) => setCustomSeparator(changeEvent.target.value)}
+                    />
+                  ) : null}
+                </div>
                 <textarea
                   rows={8}
                   autoFocus
-                  placeholder={event === "extemp" ? "First question\nSecond question\nThird question" : "First topic\nSecond topic\nThird topic"}
+                  placeholder={separatorPlaceholder(separator, customSeparator, event === "extemp" ? "question" : "topic")}
                   value={bulkDraft}
                   onChange={(changeEvent) => setBulkDraft(changeEvent.target.value)}
                 />
