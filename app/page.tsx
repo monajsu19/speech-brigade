@@ -5889,7 +5889,6 @@ export default function SpeechBrigade() {
             ) : (
               <>
                 <div className="setup-step spin-screen">
-                  <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
                   <TopicSpinner
                     key={themeReelKey}
                     items={themeNames}
@@ -5904,7 +5903,6 @@ export default function SpeechBrigade() {
                 </div>
                 {setupStage !== "spin" ? (
                   <div className="setup-step spin-screen" ref={setupStage === "topics" ? latestSetupStepRef : undefined}>
-                    <p className="eyebrow step-heading"><strong>Spin</strong> for a list of topics, and <strong>choose</strong> which to speak on</p>
                     <TopicSpinnerGroup
                       count={3}
                       items={impromptuThemeTopics}
