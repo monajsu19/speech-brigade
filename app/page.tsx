@@ -383,11 +383,11 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     expectationsParagraph:
       "Prepare a polished original speech and practice delivering it under tournament-style timing with clear structure, purposeful emphasis, and confident audience engagement.",
     futureWorkflowParagraph:
-      "In Speech Brigade, you will be able to upload your written speech, receive feedback on your writing, and receive recommendations for improving your performance. For now, you can practice delivering your speech under tournament-style timing.",
+      "In Mojo Speech Prep, you will be able to upload your written speech, receive feedback on your writing, and receive recommendations for improving your performance. For now, you can practice delivering your speech under tournament-style timing.",
     performanceDurationSeconds: 600,
     aiModalTitle: "Writing & Delivery Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your written Original Oratory and provide personalized recommendations for improving its argument, organization, evidence, clarity, and rhetorical impact.\n\nIt will also offer performance advice, including recommendations for pacing, emphasis, transitions, vocal delivery, and audience engagement.\n\nThe goal is to help you strengthen both what you say and how you say it.",
+      "Soon, Mojo Speech Prep will analyze your written Original Oratory and provide personalized recommendations for improving its argument, organization, evidence, clarity, and rhetorical impact.\n\nIt will also offer performance advice, including recommendations for pacing, emphasis, transitions, vocal delivery, and audience engagement.\n\nThe goal is to help you strengthen both what you say and how you say it.",
   },
   inf: {
     id: "inf",
@@ -404,11 +404,11 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     expectationsParagraph:
       "Prepare a clear presentation, incorporate visual aids when permitted by the applicable tournament rules, and practice explaining complex information with engaging delivery.",
     futureWorkflowParagraph:
-      "Speech Brigade will eventually allow you to upload your written speech for feedback on its content, structure, and presentation. For now, you can practice delivering your speech under tournament-style timing and review your performance afterward.",
+      "Mojo Speech Prep will eventually allow you to upload your written speech for feedback on its content, structure, and presentation. For now, you can practice delivering your speech under tournament-style timing and review your performance afterward.",
     performanceDurationSeconds: 600,
     aiModalTitle: "Writing & Delivery Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your written Informative speech and provide personalized feedback on organization, clarity, explanation, supporting examples, and audience understanding.\n\nIt will also recommend ways to improve your delivery, including pacing, emphasis, transitions, and the effective presentation of complex information.\n\nThe goal is to help you make your topic engaging, accessible, and memorable.",
+      "Soon, Mojo Speech Prep will analyze your written Informative speech and provide personalized feedback on organization, clarity, explanation, supporting examples, and audience understanding.\n\nIt will also recommend ways to improve your delivery, including pacing, emphasis, transitions, and the effective presentation of complex information.\n\nThe goal is to help you make your topic engaging, accessible, and memorable.",
   },
   di: {
     id: "di",
@@ -429,7 +429,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     performanceDurationSeconds: 600,
     aiModalTitle: "Performance Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your selected Dramatic Interpretation script and offer personalized recommendations for bringing it to life.\n\nFeedback will focus on characterization, emotional progression, vocal variety, pacing, dramatic transitions, and the overall meaning of the selection.\n\nThis feature will focus on interpreting and performing the literary work, rather than treating it as an original speech you wrote.",
+      "Soon, Mojo Speech Prep will analyze your selected Dramatic Interpretation script and offer personalized recommendations for bringing it to life.\n\nFeedback will focus on characterization, emotional progression, vocal variety, pacing, dramatic transitions, and the overall meaning of the selection.\n\nThis feature will focus on interpreting and performing the literary work, rather than treating it as an original speech you wrote.",
   },
   hi: {
     id: "hi",
@@ -450,7 +450,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     performanceDurationSeconds: 600,
     aiModalTitle: "Performance Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your Humorous Interpretation script and offer personalized recommendations for character differentiation, comedic timing, pacing, vocal variety, transitions, and storytelling.\n\nThe goal is to help you create a clearer, more entertaining, and more cohesive performance.",
+      "Soon, Mojo Speech Prep will analyze your Humorous Interpretation script and offer personalized recommendations for character differentiation, comedic timing, pacing, vocal variety, transitions, and storytelling.\n\nThe goal is to help you create a clearer, more entertaining, and more cohesive performance.",
   },
   duo: {
     id: "duo",
@@ -467,11 +467,11 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     expectationsParagraph:
       "Prepare with your partner and practice timing, coordination, transitions, and shared storytelling through the full performance.",
     futureWorkflowParagraph:
-      "Speech Brigade will eventually support uploading your performance script and receiving recommendations for characterization, pacing, transitions, and coordination between performers. For now, you can use the performance timer to practice your piece with your partner.",
+      "Mojo Speech Prep will eventually support uploading your performance script and receiving recommendations for characterization, pacing, transitions, and coordination between performers. For now, you can use the performance timer to practice your piece with your partner.",
     performanceDurationSeconds: 600,
     aiModalTitle: "Duo Performance Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your Duo Interpretation script and offer recommendations for both performers.\n\nFeedback will focus on characterization, coordination, timing, transitions, vocal variety, and the overall cohesion of the performance.\n\nThe goal is to help both speakers work together to deliver a unified interpretation of the selection.",
+      "Soon, Mojo Speech Prep will analyze your Duo Interpretation script and offer recommendations for both performers.\n\nFeedback will focus on characterization, coordination, timing, transitions, vocal variety, and the overall cohesion of the performance.\n\nThe goal is to help both speakers work together to deliver a unified interpretation of the selection.",
   },
   poi: {
     id: "poi",
@@ -492,7 +492,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     performanceDurationSeconds: 600,
     aiModalTitle: "Program Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your Program Oral Interpretation script and provide recommendations for improving the cohesion and impact of your program.\n\nFeedback will focus on thematic development, organization, transitions between selections, vocal variety, characterization, and the effectiveness of the overall performance.\n\nThe goal is to help the individual selections come together into one meaningful presentation.",
+      "Soon, Mojo Speech Prep will analyze your Program Oral Interpretation script and provide recommendations for improving the cohesion and impact of your program.\n\nFeedback will focus on thematic development, organization, transitions between selections, vocal variety, characterization, and the effectiveness of the overall performance.\n\nThe goal is to help the individual selections come together into one meaningful presentation.",
   },
 };
 
@@ -1023,7 +1023,7 @@ const extempQuestions: ExtempQuestion[] = [
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "Speech Brigade",
+  name: "Mojo Speech Prep",
   applicationCategory: "EducationalApplication",
   operatingSystem: "Any",
   url: "https://speech-studio-nsda.zeldatf2potato.chatgpt.site",
@@ -2151,7 +2151,7 @@ function MicrophoneAsk({ onAllow, onSkip }: { onAllow: () => void; onSkip: () =>
         <span className="mic-ask-icon">{MIC_ICON}</span>
         <h2 id="mic-ask-title">Allow Mic Permissions</h2>
         <p>
-          Speech Brigade analyzes your speeches so you can come back to them later. You can still practice, but will be
+          Mojo Speech Prep analyzes your speeches so you can come back to them later. You can still practice, but will be
           unable to review your speech if you block microphone access.
         </p>
         <div className="mic-ask-actions">
@@ -2404,7 +2404,7 @@ function PrivacyInfoButton() {
   return (
     <InfoTip label="About saving recordings">
       Your privacy matters. Saving recordings is optional and exists only so you can revisit your own practice.
-      Speech Brigade does not listen to, reuse, or train on your audio or transcript.
+      Mojo Speech Prep does not listen to, reuse, or train on your audio or transcript.
     </InfoTip>
   );
 }
@@ -5223,7 +5223,16 @@ export default function SpeechBrigade() {
       case "landing":
         return (
           <section className="hero">
-            <h1>Speech Brigade</h1>
+            <h1 className="hero-logo">
+              <Image
+                unoptimized
+                src="/mojo-speech-prep-logo.png"
+                alt="Mojo Speech Prep"
+                width={900}
+                height={450}
+                priority
+              />
+            </h1>
             <p className="lede">Speech and Debate Practice and Analysis</p>
             <div className="hero-actions">
               <button className="ghost-card" type="button" onClick={() => setScreen("gamesSelection")}>
@@ -6383,18 +6392,14 @@ export default function SpeechBrigade() {
 	          </>
 	        ) : (
 	          <>
-	            {/* Text wordmark on desktop, round logo on phones. */}
-	            <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
-	              <span className="wordmark-text">
-	                <span>Speech</span> Brigade
-	              </span>
+	            <button className="wordmark" type="button" onClick={goHome} aria-label="Mojo Speech Prep, return home">
 	              <Image
 	                unoptimized
 	                className="wordmark-logo"
-	                src="/speech-brigade-logo.png"
+	                src="/mojo-speech-prep-logo.png"
 	                alt=""
-	                width={64}
-	                height={64}
+	                width={900}
+	                height={450}
 	                priority
 	              />
 	            </button>
@@ -6514,7 +6519,7 @@ export default function SpeechBrigade() {
             >
               ×
             </button>
-            <p className="eyebrow">Speech Brigade</p>
+            <p className="eyebrow">Mojo Speech Prep</p>
             <h2 id="founders-title">Meet the Founders</h2>
             <div className="founders-grid">
               <article className="founder-card">

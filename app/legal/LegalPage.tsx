@@ -17,7 +17,7 @@ export function LegalPage({
   return (
     <main className="legal-page">
       <Link className="legal-back" href="/">
-        ← Back to Speech Brigade
+        ← Back to Mojo Speech Prep
       </Link>
       <header className="legal-header">
         <h1>{title}</h1>

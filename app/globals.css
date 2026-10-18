@@ -147,16 +147,10 @@ input:focus-visible {
   color: inherit;
 }
 
-.wordmark-text span {
-  color: var(--gold);
-}
-
 .wordmark-logo {
-  display: none;
-  width: 3.7rem;
-  height: 3.7rem;
-  border-radius: 50%;
-  box-shadow: 0 10px 28px rgba(20, 18, 12, 0.12);
+  display: block;
+  width: auto;
+  height: 3.4rem;
 }
 
 .home-button {
@@ -423,6 +417,19 @@ h1 {
   max-width: 12ch;
   font-size: clamp(3rem, 8.5vw, 7.7rem);
   line-height: 0.92;
+}
+
+.hero .hero-logo {
+  width: min(62%, 22rem);
+  max-width: none;
+  margin-inline: auto;
+  line-height: 0;
+}
+
+.hero-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .reading h1,
@@ -1880,17 +1887,12 @@ h1 {
 	    display: none;
 	  }
 
-	  /* On phones the text wordmark gives way to the round logo. */
 	  .wordmark {
 	    justify-self: start;
 	  }
 
-	  .wordmark-text {
-	    display: none;
-	  }
-
 	  .wordmark-logo {
-	    display: block;
+	    height: 2.6rem;
 	  }
 
 	  .header-actions {
@@ -1917,8 +1919,7 @@ h1 {
   }
 
   .dark-phase .wordmark img {
-    width: 2.75rem;
-    height: 2.75rem;
+    height: 2.2rem;
   }
 
   .hero,

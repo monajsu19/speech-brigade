@@ -4,7 +4,7 @@ import { CONTACT_EMAIL, LEGAL_UPDATED, LegalPage } from "../legal/LegalPage";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "The terms for using Speech Brigade.",
+  description: "The terms for using Mojo Speech Prep.",
   alternates: { canonical: "/terms/" },
 };
 
@@ -15,7 +15,7 @@ export default function TermsOfService() {
         <h2>1. Agreement to These Terms</h2>
         <p>
           These Terms of Service (&ldquo;Terms&rdquo;) form a legally binding agreement between you (&ldquo;you&rdquo; or
-          &ldquo;User&rdquo;) and Speech Brigade (&ldquo;Speech Brigade,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or
+          &ldquo;User&rdquo;) and Mojo Speech Prep (&ldquo;Mojo Speech Prep,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or
           &ldquo;our&rdquo;). They govern your access to and use of our website, practice tools, software, and related services
           (collectively, the &ldquo;Service&rdquo;).
         </p>
@@ -68,7 +68,7 @@ export default function TermsOfService() {
         <h2>5. Free Service and Optional Tips</h2>
         <p>
           The Service is currently free to use. You may choose to leave a tip to support it; tips go toward running and
-          improving Speech Brigade, such as hosting, transcription, and new features. Tips are voluntary, are processed
+          improving Mojo Speech Prep, such as hosting, transcription, and new features. Tips are voluntary, are processed
           by Buy Me a Coffee under its own terms, do not purchase any feature or benefit, and, except as required by
           applicable law, are non-refundable.
         </p>
@@ -145,7 +145,7 @@ export default function TermsOfService() {
       <section>
         <h2>9. Intellectual Property</h2>
         <p>
-          The Service, including its software, design, text, graphics, logos, and trademarks, is owned by Speech Brigade or its
+          The Service, including its software, design, text, graphics, logos, and trademarks, is owned by Mojo Speech Prep or its
           licensors and is protected by applicable intellectual-property laws. Subject to your compliance with these Terms, we
           grant you a limited, personal, non-exclusive, non-transferable, revocable license to access and use the Service for
           your own practice and for non-commercial classroom and team use. No other rights are granted to you, whether by
@@ -169,7 +169,7 @@ export default function TermsOfService() {
           <strong>The Service Is Provided &ldquo;As Is&rdquo; and &ldquo;As Available.&rdquo;</strong>
         </p>
         <p>
-          To the fullest extent permitted by law, Speech Brigade and its licensors, suppliers, and service providers disclaim
+          To the fullest extent permitted by law, Mojo Speech Prep and its licensors, suppliers, and service providers disclaim
           all warranties, whether express, implied, statutory, or otherwise, including any warranties of merchantability,
           fitness for a particular purpose, title, quiet enjoyment, and non-infringement, and any warranties arising out of
           course of dealing or usage of trade.
@@ -185,7 +185,7 @@ export default function TermsOfService() {
       <section>
         <h2>12. Limitation of Liability</h2>
         <p>
-          To the fullest extent permitted by law, in no event will Speech Brigade or its founders, employees, agents,
+          To the fullest extent permitted by law, in no event will Mojo Speech Prep or its founders, employees, agents,
           affiliates, licensors, suppliers, or service providers be liable for any indirect, incidental, special,
           consequential, punitive, or exemplary damages, including loss of profits, loss of data, loss of goodwill, business
           interruption, or the cost of substitute services, arising out of or relating to these Terms or the Service, whether
@@ -203,7 +203,7 @@ export default function TermsOfService() {
       <section>
         <h2>13. Indemnification</h2>
         <p>
-          You agree to indemnify, defend, and hold harmless Speech Brigade and its founders, employees, agents, affiliates,
+          You agree to indemnify, defend, and hold harmless Mojo Speech Prep and its founders, employees, agents, affiliates,
           licensors, suppliers, and service providers from and against any claims, damages, liabilities, losses, costs, and
           expenses (including reasonable attorneys&rsquo; fees) arising out of or relating to (i) your use of the Service, (ii)
           your User Content, (iii) your violation of these Terms, or (iv) your violation of any rights of another person or

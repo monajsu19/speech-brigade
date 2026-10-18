@@ -3,16 +3,16 @@ import "./globals.css";
 
 const siteUrl = "https://speech-studio-nsda.zeldatf2potato.chatgpt.site";
 const siteDescription =
-  "Speech Brigade is a free Competitive Speech & Debate speaking practice web app for high school and college students, coaches, teachers, and schools practicing Extemporaneous Speaking and Impromptu Speaking.";
+  "Mojo Speech Prep is a free Competitive Speech & Debate speaking practice web app for high school and college students, coaches, teachers, and schools practicing Extemporaneous Speaking and Impromptu Speaking.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Speech Brigade | Competitive Speech & Debate Practice",
-    template: "%s | Speech Brigade",
+    default: "Mojo Speech Prep | Competitive Speech & Debate Practice",
+    template: "%s | Mojo Speech Prep",
   },
   description: siteDescription,
-  applicationName: "Speech Brigade",
+  applicationName: "Mojo Speech Prep",
   authors: [{ name: "JD Hopper", url: "https://www.jdhopper.org" }],
   creator: "JD Hopper",
   publisher: "JD Hopper",
@@ -51,20 +51,20 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     url: siteUrl,
-    title: "Speech Brigade | Competitive Speech & Debate Practice",
+    title: "Mojo Speech Prep | Competitive Speech & Debate Practice",
     description: siteDescription,
-    siteName: "Speech Brigade",
+    siteName: "Mojo Speech Prep",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Speech Brigade | Competitive Speech & Debate Practice",
+    title: "Mojo Speech Prep | Competitive Speech & Debate Practice",
     description: siteDescription,
   },
   icons: {
     icon: "/favicon.png",
     shortcut: "/favicon.png",
-    apple: "/speech-brigade-logo.png",
+    apple: "/mojo-speech-prep-icon.png",
   },
 };
 
