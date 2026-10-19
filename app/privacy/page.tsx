@@ -4,7 +4,7 @@ import { CONTACT_EMAIL, LEGAL_UPDATED, LegalPage } from "../legal/LegalPage";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "How Speech Brigade collects, uses, and protects your information.",
+  description: "How Mojo Speech Prep collects, uses, and protects your information.",
   alternates: { canonical: "/privacy/" },
 };
 
@@ -14,7 +14,7 @@ export default function PrivacyPolicy() {
       <section>
         <h2>1. Introduction</h2>
         <p>
-          This Privacy Policy explains how Speech Brigade (&ldquo;Speech Brigade,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or
+          This Privacy Policy explains how Mojo Speech Prep (&ldquo;Mojo Speech Prep,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or
           &ldquo;our&rdquo;) collects, uses, discloses, and safeguards information when you use our website and services
           (collectively, the &ldquo;Service&rdquo;). By accessing or using the Service, you acknowledge that you have read and
           understood this Privacy Policy.
@@ -36,7 +36,7 @@ export default function PrivacyPolicy() {
         </p>
         <h3>b. Tips</h3>
         <p>
-          The Service is free. Tips are optional and go toward running and improving Speech Brigade. If you choose to leave a
+          The Service is free. Tips are optional and go toward running and improving Mojo Speech Prep. If you choose to leave a
           tip, it is handled entirely by Buy Me a Coffee on its own website. We
           do not receive or store your payment card details. Your tip is governed by Buy Me a Coffee&rsquo;s terms and privacy
           policy.
@@ -57,9 +57,9 @@ export default function PrivacyPolicy() {
           If you upload a script (PDF, DOCX, or TXT), its text is read in your browser. The file itself is not
           uploaded; only the text you choose to analyze is sent to the Service for feedback.
         </p>
-        <h3>e. AI-Generated Analysis</h3>
+        <h3>e. LLM-Generated Analysis</h3>
         <p>
-          We submit your transcripts and script text to a third-party large language model to generate feedback, including
+          We submit your transcripts and script text to a third-party large language model (LLM) to generate feedback, including
           scores, sentence-level annotations, suggested improvements, and other coaching content. When you save a recording,
           we store this generated output alongside it.
         </p>
@@ -87,7 +87,7 @@ export default function PrivacyPolicy() {
         <p>We use the information we collect to:</p>
         <ul>
           <li>Provide, operate, and maintain the Service, including your account and practice history;</li>
-          <li>Transcribe and analyze your recordings and scripts to generate AI-powered feedback;</li>
+          <li>Transcribe and analyze your recordings and scripts to generate LLM-powered feedback;</li>
           <li>Respond to support requests and communicate with you about your account or the Service;</li>
           <li>Detect, investigate, and prevent fraud, abuse, and security incidents;</li>
           <li>Comply with legal obligations and enforce our Terms of Service.</li>
@@ -109,11 +109,11 @@ export default function PrivacyPolicy() {
             <strong>Deepgram</strong> — Receives audio recordings to generate transcripts and word-level timing.
           </li>
           <li>
-            <strong>Google (Gemini API and Google Sign-In)</strong> — Receives transcripts and script text to generate AI
+            <strong>Google (Gemini API and Google Sign-In)</strong> — Receives transcripts and script text to generate LLM
             feedback, and, if you choose Google sign-in, handles your sign-in.
           </li>
           <li>
-            <strong>Netlify</strong> — Hosts the Speech Brigade website.
+            <strong>Netlify</strong> — Hosts the Mojo Speech Prep website.
           </li>
           <li>
             <strong>Buy Me a Coffee</strong> — Processes optional tips on its own website.
@@ -130,7 +130,7 @@ export default function PrivacyPolicy() {
         <h2>5. What We Do Not Do</h2>
         <ul>
           <li>We do not sell or rent your personal information.</li>
-          <li>We do not use your recordings, transcripts, or scripts to train our own AI models.</li>
+          <li>We do not use your recordings, transcripts, or scripts to train our own LLMs or other models.</li>
           <li>We do not share your recordings with other users.</li>
           <li>We do not use your content for advertising.</li>
         </ul>
@@ -172,7 +172,7 @@ export default function PrivacyPolicy() {
       <section>
         <h2>8. International Data Transfers</h2>
         <p>
-          Speech Brigade and our service providers may process and store information in the United States and other countries
+          Mojo Speech Prep and our service providers may process and store information in the United States and other countries
           that may have different data protection laws than your country of residence. By using the Service, you consent to
           the transfer of your information to such jurisdictions.
         </p>
@@ -201,7 +201,7 @@ export default function PrivacyPolicy() {
       <section>
         <h2>10. Students and Children&rsquo;s Privacy</h2>
         <p>
-          Speech Brigade is built for high school and college speech and debate students, coaches, and teachers. The Service
+          Mojo Speech Prep is built for high school and college speech and debate students, coaches, and teachers. The Service
           is not intended for children under the age of thirteen (13), and we do not knowingly collect personal information
           from them. If you are under eighteen (18), please use the Service with the permission of a parent or guardian, or as
           part of a school or team activity with your coach&rsquo;s or teacher&rsquo;s guidance.

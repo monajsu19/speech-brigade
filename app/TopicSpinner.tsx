@@ -109,8 +109,9 @@ export function TopicSpinner({
     };
   }, []);
 
+  // Callers may pass a fresh array each render, so only a changed list resets the reel.
   useEffect(() => {
-    if (itemsRef.current === items) return;
+    if (itemsRef.current.join("\n") === items.join("\n")) return;
     itemsRef.current = items;
     spinnerRef.current?.setItems(items);
   }, [items]);
@@ -143,7 +144,8 @@ function shuffled<T>(items: T[]) {
 // land on distinct items, one after another, and Spin/continue sit under all the cards.
 // With onSelect, a landed card can be clicked to choose it. Short one-word prompts can sit
 // side by side with layout="row"; sentences stay stacked. With spinEach, every card gets its own
-// Spin button (colored by tones) and only the continue button sits under the cards; headings
+// Spin button (colored by tones), and under the cards sit the continue button and, with
+// spinAllLabel, a button that spins every card at once; headings
 // put a step heading over each card and split the cards with a dashed line.
 // Choosing groups (onSelect) collapse each card to just its landed prompt, with pickPrompt above.
 export function TopicSpinnerGroup({
@@ -164,6 +166,7 @@ export function TopicSpinnerGroup({
   onSelect,
   pickPrompt,
   landInitial = false,
+  spinAllLabel,
 }: {
   count: number;
   items: string[];
@@ -183,6 +186,8 @@ export function TopicSpinnerGroup({
   pickPrompt?: string;
   // Reports what the reels show before any spin, so that draw can be used without spinning.
   landInitial?: boolean;
+  // With spinEach: a button under the cards that spins them all at once, beside each card's own.
+  spinAllLabel?: string;
 }) {
   const containerRefs = useRef<(HTMLDivElement | null)[]>([]);
   const spinnersRef = useRef<Spinner[]>([]);
@@ -206,8 +211,9 @@ export function TopicSpinnerGroup({
         new Spinner({
           container,
           items: itemsRef.current,
-          itemHeight: isPhoneWidth() ? 60 : 84,
-          windowHeight: isPhoneWidth() ? 150 : 210,
+          // Opposing sides (spinEach) get shorter reels on phones, so both fit on one screen.
+          itemHeight: isPhoneWidth() ? (setupRef.current.spinEach ? 52 : 60) : 84,
+          windowHeight: isPhoneWidth() ? (setupRef.current.spinEach ? 124 : 150) : 210,
           fontSize: isPhoneWidth() ? "0.82rem" : "0.9rem",
           color: "#000000",
           accent: TONE_ACCENTS[setupRef.current.tones?.[index] ?? "green"],
@@ -321,7 +327,15 @@ export function TopicSpinnerGroup({
           );
         })}
       </div>
-      <SpinnerActions onSpin={spin} canSpin={!spinEach} spinDisabled={spinning || !canSpin} spinLabel={count > 1 ? "Spin all" : "Spin"} useLabel={useLabel} onUse={onUse} canUse={canUse && landed} />
+      <SpinnerActions
+        onSpin={spin}
+        canSpin={!spinEach || Boolean(spinAllLabel)}
+        spinDisabled={spinning || !canSpin}
+        spinLabel={spinAllLabel ?? (count > 1 ? "Spin all" : "Spin")}
+        useLabel={useLabel}
+        onUse={onUse}
+        canUse={canUse && landed}
+      />
     </>
   );
 }
