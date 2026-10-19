@@ -111,6 +111,8 @@ input:focus-visible {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 1rem;
+  /* The logo's height, so the bar sits the same on the home screen, which has no logo. */
+  min-height: calc(3.4rem + 1.4rem);
   width: min(1120px, 100%);
   margin: 0 auto;
   padding: 0.7rem 0.2rem;
@@ -147,16 +149,10 @@ input:focus-visible {
   color: inherit;
 }
 
-.wordmark-text span {
-  color: var(--gold);
-}
-
 .wordmark-logo {
-  display: none;
-  width: 3.7rem;
-  height: 3.7rem;
-  border-radius: 50%;
-  box-shadow: 0 10px 28px rgba(20, 18, 12, 0.12);
+  display: block;
+  width: auto;
+  height: 3.4rem;
 }
 
 .home-button {
@@ -423,6 +419,19 @@ h1 {
   max-width: 12ch;
   font-size: clamp(3rem, 8.5vw, 7.7rem);
   line-height: 0.92;
+}
+
+.hero .hero-logo {
+  width: min(62%, 22rem);
+  max-width: none;
+  margin-inline: auto;
+  line-height: 0;
+}
+
+.hero-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .reading h1,
@@ -1880,17 +1889,12 @@ h1 {
 	    display: none;
 	  }
 
-	  /* On phones the text wordmark gives way to the round logo. */
 	  .wordmark {
 	    justify-self: start;
 	  }
 
-	  .wordmark-text {
-	    display: none;
-	  }
-
 	  .wordmark-logo {
-	    display: block;
+	    height: 2.6rem;
 	  }
 
 	  .header-actions {
@@ -1917,8 +1921,7 @@ h1 {
   }
 
   .dark-phase .wordmark img {
-    width: 2.75rem;
-    height: 2.75rem;
+    height: 2.2rem;
   }
 
   .hero,
@@ -2559,6 +2562,13 @@ html[data-keyboard] .auth-form input:focus-visible {
 .auth-sent p {
   margin: 0 0 1rem;
   color: var(--muted);
+}
+
+/* Back to sign in, with Use a different email under it. */
+.auth-sent {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
 }
 
 .recording-notice {
@@ -4692,12 +4702,17 @@ html[data-keyboard] .auth-form input:focus-visible {
    landed prompt, under a line asking which one to speak on. */
 .topic-spinner-pick {
   width: min(768px, 100%);
-  margin: 2rem auto -1rem;
+  margin: 2rem auto 0;
   color: var(--ink);
   font-size: 1.05rem;
   font-weight: 600;
   text-align: center;
   animation: spinnerPickIn 320ms ease-out both;
+}
+
+/* Room between "Pick which of these…" and the cards under it. */
+.topic-spinner-pick + .topic-spinner-group {
+  margin-top: 1rem;
 }
 
 .topic-spinner-card.compact.collapsed,
@@ -5163,12 +5178,22 @@ html[data-keyboard] .auth-form input:focus-visible {
   font-size: 0.95rem;
 }
 
+/* The note centers under the whole title rather than the "i", which can sit at the screen's
+   edge on a phone, so it always stays on screen. */
+.title-with-info {
+  position: relative;
+}
+
+.title-tip-anchor {
+  position: static;
+}
+
 .privacy-tip.title-tip {
   right: auto;
   left: 50%;
   display: grid;
   gap: 0.5rem;
-  width: min(340px, 86vw);
+  width: min(340px, calc(100vw - 32px));
   font-family: var(--sans);
   letter-spacing: 0;
   transform: translateX(-50%);
@@ -5753,6 +5778,124 @@ html[data-keyboard] .auth-form input:focus-visible {
   opacity: 0.9;
 }
 
+/* Paste list: which character splits the pasted topics. */
+.my-topics-separator {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.my-topics-separator select,
+.my-topics-separator input {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ivory);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* Our own chevron, so the text and arrow get room to breathe. */
+.my-topics-separator select {
+  padding-right: 2.4rem;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%232b0a0c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 0.85rem center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.my-topics-separator input {
+  width: 5rem;
+}
+
+.my-topics-separator select:focus,
+.my-topics-separator input:focus {
+  border-color: rgba(158, 42, 43, 0.6);
+  outline: none;
+}
+
+.my-topics-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.my-topics-cancel.small {
+  padding: 0.38rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.my-topics-cancel.small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.my-topics-clear {
+  padding: 0.38rem 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.my-topics-clear:hover {
+  text-decoration: underline;
+}
+
+.my-topics-paste-link {
+  margin-top: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Clear All's Undo, pinned to the bottom of the screen until it times out. */
+.my-topics-undo {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  width: max-content;
+  margin: 0 auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem 0.65rem 1.1rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.875rem;
+  box-shadow: 0 12px 32px rgba(20, 18, 12, 0.22);
+  white-space: nowrap;
+  animation: modalLift 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.my-topics-undo button {
+  padding: 0.3rem 0.8rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
 /* Password sign-in: show/hide toggle, Forgot password, and the sign-up / magic link switches. */
 .auth-forgot {
   justify-self: center;
@@ -5856,7 +5999,25 @@ html[data-keyboard] .auth-form input:focus-visible {
 
 .home-footer-founders {
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 400;
+}
+
+/* The two founders' faces, overlapping, ahead of "Meet the founders". */
+.footer-founder-faces {
+  display: inline-flex;
+  margin-right: 0.15rem;
+}
+
+.footer-founder-faces img {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.footer-founder-faces img + img {
+  margin-left: -8px;
 }
 
 .home-footer-tip:hover,
@@ -5881,11 +6042,12 @@ html[data-keyboard] .auth-form input:focus-visible {
   min-height: 32px;
   padding: 0 0.25rem;
   color: var(--muted);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .home-footer-legal a:hover {
-  text-decoration: underline;
+  color: var(--ink);
 }
 
 /* Privacy Policy and Terms of Service pages. */
@@ -5968,4 +6130,351 @@ html[data-keyboard] .auth-form input:focus-visible {
 .legal-body a {
   color: var(--ink);
   text-underline-offset: 0.2em;
+}
+
+/* Microphone help: steps for allowing the microphone on the device in hand. */
+.mic-help {
+  text-align: left;
+}
+
+/* One line, overriding the info popup's narrow headline; room on the right for the close button. */
+.mic-help h2 {
+  max-width: none;
+  margin: 0 3rem 0.5rem 0;
+  font-family: var(--display);
+  font-size: clamp(1.25rem, 5vw, 1.6rem);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.mic-help-lead {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.mic-help-steps {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.mic-help-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mic-help-number {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: rgba(158, 42, 43, 0.1);
+  color: var(--primary, #9e2a2b);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* Still blocked? Each device on its own row, its settings path as one chip per tap. */
+.mic-help-blocked {
+  display: grid;
+  gap: 1rem;
+  margin: 0 0 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.mic-help-blocked h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.mic-help-device {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.mic-help-device-name {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mic-help-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0;
+}
+
+.mic-help-path > span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.mic-help-chip {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--ivory);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mic-help-arrow {
+  padding: 0 0.35rem;
+  color: var(--muted);
+}
+
+.mic-help-then {
+  font-size: 0.9rem;
+}
+
+.mic-help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.mic-help-actions button {
+  width: auto;
+  margin: 0;
+}
+
+.legal-page .home-footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+/* Microphone ask: our own pop-up ahead of the browser's permission prompt. */
+.mic-ask {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  width: min(420px, 100%);
+}
+
+.mic-ask-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 0.25rem;
+  border-radius: 50%;
+  background: rgba(158, 42, 43, 0.1);
+  color: var(--primary, #9e2a2b);
+}
+
+.mic-ask h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.mic-ask p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.mic-ask-actions {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.mic-ask-actions .primary {
+  width: 100%;
+  margin: 0;
+}
+
+.mic-ask-skip {
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.mic-ask-skip:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* Under the Speech analysis and Save recording toggles: opens the microphone steps. */
+.practice-mic-link {
+  grid-column: 1 / -1;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.practice-mic-link:hover {
+  color: var(--ink);
+}
+
+/* Back in the top bar is a phone-only placement; desktop keeps Back beside the title. */
+.header-back {
+  display: none;
+}
+
+/* Phones: a compact top bar with Back in it, one-line titles, tighter reels and timers. */
+@media (max-width: 760px) {
+  /* Compact top bar. */
+  .app-shell {
+    padding-top: 0.45rem;
+  }
+
+  .app-header {
+    min-height: 2.6rem;
+    padding: 0.2rem 0;
+  }
+
+  .wordmark-logo {
+    height: 2.1rem;
+  }
+
+  .home-button {
+    min-height: 2rem;
+    padding: 0.38rem 0.62rem;
+  }
+
+  .screen-frame {
+    padding-block: 0.35rem 0.9rem;
+  }
+
+  /* Speaking screens keep the same bar as every other page. */
+  .dark-phase.app-shell {
+    padding-top: 0.45rem;
+  }
+
+  .dark-phase .app-header {
+    padding: 0.2rem 0;
+  }
+
+  .dark-phase .wordmark img {
+    height: 2.1rem;
+  }
+
+  /* Allow Mic Permissions opens in the middle of the screen, not as a bottom sheet. */
+  .founders-modal-backdrop:has(.mic-ask) {
+    align-items: center;
+  }
+
+  /* Back takes the logo's place in the top bar; the title gets its row to itself. */
+  .app-header .header-back {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    width: auto;
+    min-height: 2rem;
+    margin: 0;
+    font-size: 0.85rem;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+  }
+
+  .app-header.has-back .wordmark,
+  .setup-back {
+    display: none;
+  }
+
+  .setup-title-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setup-title-row h1 {
+    grid-column: 1;
+  }
+
+  /* Event and game titles stay on one line where they fit. */
+  .event-setup .setup-title-row h1 {
+    font-size: min(2rem, 6.6vw);
+    line-height: 1.1;
+  }
+
+  /* Which Is Worse: tighter sides so both scenarios and Start show together. */
+  .topic-spinner-group.row.split {
+    row-gap: 0.9rem;
+  }
+
+  .topic-spinner-side {
+    gap: 0.4rem;
+  }
+
+  .topic-spinner-card.compact:has(.card-spin) {
+    padding: 14px 10px 4px;
+  }
+
+  .topic-spinner-spin.card-spin {
+    margin: 6px 0 8px;
+    padding: 8px 22px;
+  }
+
+  .topic-spinner-group.split + .topic-spinner-actions {
+    margin-top: 1rem;
+  }
+
+  /* Impromptu's three topics sit in a row of three instead of three tall cards. */
+  .topic-spinner-group.row:not(.split) {
+    grid-template-columns: repeat(var(--spinner-count), minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .topic-spinner-group.row:not(.split) .topic-spinner-card.compact {
+    padding: 22px 2px 6px;
+  }
+
+  .topic-spinner-group.row:not(.split) .topic-spinner-card.compact.collapsed {
+    min-height: 72px;
+    padding: 12px 6px;
+  }
+
+  .topic-spinner-group.row:not(.split) .topic-spinner-result {
+    font-size: 0.95rem;
+    overflow-wrap: anywhere;
+  }
+
+  /* The chosen question above the prep timer stays short of the dial. */
+  .round-timer-page .topic-banner strong {
+    font-size: 1.15rem;
+    line-height: 1.25;
+  }
+
+  /* Mic permissions: settings paths read as one line of plain text. */
+  .mic-help-chip {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 0.9rem;
+  }
+
+  .mic-help-arrow {
+    padding: 0 0.3rem;
+  }
 }

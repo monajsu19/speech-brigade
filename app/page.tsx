@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase, supabaseUrl } from "./supabaseClient";
 import { MyTopics } from "./MyTopics";
+import { SiteFooter } from "./SiteFooter";
 import { TopicSpinner, TopicSpinnerGroup } from "./TopicSpinner";
 
 type EventMode = "impromptu" | "extemp";
@@ -51,6 +52,14 @@ const TRANSIENT_SCREENS = new Set<Screen>([
   "reviewSpeech",
   "analyzing",
 ]);
+
+const SPEECH_ANALYSIS_KEY = "speech-brigade-speech-analysis";
+
+// Event and game setup pages, whose Back link sits beside the title on desktop and in the top bar on phones.
+const SETUP_BACK_SCREENS = new Set<Screen>(["gameSetup", "impromptuIntro", "extempIntro", "preparedEventIntro"]);
+
+// Account, Rules, and Recent pages leave out the site footer.
+const FOOTERLESS_SCREENS = new Set<Screen>(["signIn", "settings", "rules", "rulesDetail", "pastSpeeches", "vaultAnalysis"]);
 
 // Where Back goes when the browser history can't be trusted to hold the previous screen.
 const PARENT_SCREENS: Partial<Record<Screen, Screen>> = {
@@ -377,11 +386,11 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     expectationsParagraph:
       "Prepare a polished original speech and practice delivering it under tournament-style timing with clear structure, purposeful emphasis, and confident audience engagement.",
     futureWorkflowParagraph:
-      "In Speech Brigade, you will be able to upload your written speech, receive feedback on your writing, and receive recommendations for improving your performance. For now, you can practice delivering your speech under tournament-style timing.",
+      "In Mojo Speech Prep, you will be able to upload your written speech, receive feedback on your writing, and receive recommendations for improving your performance. For now, you can practice delivering your speech under tournament-style timing.",
     performanceDurationSeconds: 600,
     aiModalTitle: "Writing & Delivery Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your written Original Oratory and provide personalized recommendations for improving its argument, organization, evidence, clarity, and rhetorical impact.\n\nIt will also offer performance advice, including recommendations for pacing, emphasis, transitions, vocal delivery, and audience engagement.\n\nThe goal is to help you strengthen both what you say and how you say it.",
+      "Soon, Mojo Speech Prep will analyze your written Original Oratory and provide personalized recommendations for improving its argument, organization, evidence, clarity, and rhetorical impact.\n\nIt will also offer performance advice, including recommendations for pacing, emphasis, transitions, vocal delivery, and audience engagement.\n\nThe goal is to help you strengthen both what you say and how you say it.",
   },
   inf: {
     id: "inf",
@@ -398,11 +407,11 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     expectationsParagraph:
       "Prepare a clear presentation, incorporate visual aids when permitted by the applicable tournament rules, and practice explaining complex information with engaging delivery.",
     futureWorkflowParagraph:
-      "Speech Brigade will eventually allow you to upload your written speech for feedback on its content, structure, and presentation. For now, you can practice delivering your speech under tournament-style timing and review your performance afterward.",
+      "Mojo Speech Prep will eventually allow you to upload your written speech for feedback on its content, structure, and presentation. For now, you can practice delivering your speech under tournament-style timing and review your performance afterward.",
     performanceDurationSeconds: 600,
     aiModalTitle: "Writing & Delivery Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your written Informative speech and provide personalized feedback on organization, clarity, explanation, supporting examples, and audience understanding.\n\nIt will also recommend ways to improve your delivery, including pacing, emphasis, transitions, and the effective presentation of complex information.\n\nThe goal is to help you make your topic engaging, accessible, and memorable.",
+      "Soon, Mojo Speech Prep will analyze your written Informative speech and provide personalized feedback on organization, clarity, explanation, supporting examples, and audience understanding.\n\nIt will also recommend ways to improve your delivery, including pacing, emphasis, transitions, and the effective presentation of complex information.\n\nThe goal is to help you make your topic engaging, accessible, and memorable.",
   },
   di: {
     id: "di",
@@ -423,7 +432,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     performanceDurationSeconds: 600,
     aiModalTitle: "Performance Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your selected Dramatic Interpretation script and offer personalized recommendations for bringing it to life.\n\nFeedback will focus on characterization, emotional progression, vocal variety, pacing, dramatic transitions, and the overall meaning of the selection.\n\nThis feature will focus on interpreting and performing the literary work, rather than treating it as an original speech you wrote.",
+      "Soon, Mojo Speech Prep will analyze your selected Dramatic Interpretation script and offer personalized recommendations for bringing it to life.\n\nFeedback will focus on characterization, emotional progression, vocal variety, pacing, dramatic transitions, and the overall meaning of the selection.\n\nThis feature will focus on interpreting and performing the literary work, rather than treating it as an original speech you wrote.",
   },
   hi: {
     id: "hi",
@@ -444,7 +453,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     performanceDurationSeconds: 600,
     aiModalTitle: "Performance Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your Humorous Interpretation script and offer personalized recommendations for character differentiation, comedic timing, pacing, vocal variety, transitions, and storytelling.\n\nThe goal is to help you create a clearer, more entertaining, and more cohesive performance.",
+      "Soon, Mojo Speech Prep will analyze your Humorous Interpretation script and offer personalized recommendations for character differentiation, comedic timing, pacing, vocal variety, transitions, and storytelling.\n\nThe goal is to help you create a clearer, more entertaining, and more cohesive performance.",
   },
   duo: {
     id: "duo",
@@ -461,11 +470,11 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     expectationsParagraph:
       "Prepare with your partner and practice timing, coordination, transitions, and shared storytelling through the full performance.",
     futureWorkflowParagraph:
-      "Speech Brigade will eventually support uploading your performance script and receiving recommendations for characterization, pacing, transitions, and coordination between performers. For now, you can use the performance timer to practice your piece with your partner.",
+      "Mojo Speech Prep will eventually support uploading your performance script and receiving recommendations for characterization, pacing, transitions, and coordination between performers. For now, you can use the performance timer to practice your piece with your partner.",
     performanceDurationSeconds: 600,
     aiModalTitle: "Duo Performance Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your Duo Interpretation script and offer recommendations for both performers.\n\nFeedback will focus on characterization, coordination, timing, transitions, vocal variety, and the overall cohesion of the performance.\n\nThe goal is to help both speakers work together to deliver a unified interpretation of the selection.",
+      "Soon, Mojo Speech Prep will analyze your Duo Interpretation script and offer recommendations for both performers.\n\nFeedback will focus on characterization, coordination, timing, transitions, vocal variety, and the overall cohesion of the performance.\n\nThe goal is to help both speakers work together to deliver a unified interpretation of the selection.",
   },
   poi: {
     id: "poi",
@@ -486,7 +495,7 @@ const PREPARED_EVENT_CONFIGS: Record<PreparedEventId, PreparedEventConfig> = {
     performanceDurationSeconds: 600,
     aiModalTitle: "Program Coaching",
     aiModalBody:
-      "Soon, Speech Brigade will analyze your Program Oral Interpretation script and provide recommendations for improving the cohesion and impact of your program.\n\nFeedback will focus on thematic development, organization, transitions between selections, vocal variety, characterization, and the effectiveness of the overall performance.\n\nThe goal is to help the individual selections come together into one meaningful presentation.",
+      "Soon, Mojo Speech Prep will analyze your Program Oral Interpretation script and provide recommendations for improving the cohesion and impact of your program.\n\nFeedback will focus on thematic development, organization, transitions between selections, vocal variety, characterization, and the effectiveness of the overall performance.\n\nThe goal is to help the individual selections come together into one meaningful presentation.",
   },
 };
 
@@ -569,7 +578,9 @@ const SPEAKING_GAME_CONFIGS: Record<SpeakingGameId, SpeakingGameConfig> = {
   },
 };
 
-const SPEAKING_GAME_IDS: SpeakingGameId[] = ["hotSeat", "wordFusion", "storyRelay", "landPlane", "threeTwoOne", "weighing"];
+// The games offered on the Games and Rules pages. The individual games (Hot Seat, Word Fusion,
+// Story Relay, Land the Plane) are switched off for now; their setup stays below.
+const SPEAKING_GAME_IDS: SpeakingGameId[] = ["threeTwoOne", "weighing"];
 
 const hotSeatQuestions = [
   "What is one lesson everyone should learn before graduating high school?",
@@ -1015,7 +1026,7 @@ const extempQuestions: ExtempQuestion[] = [
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "Speech Brigade",
+  name: "Mojo Speech Prep",
   applicationCategory: "EducationalApplication",
   operatingSystem: "Any",
   url: "https://speech-studio-nsda.zeldatf2potato.chatgpt.site",
@@ -1322,6 +1333,9 @@ const DIAL_SIZE_BASE = 260;
 const DIAL_SIDE_GUTTER = 48;
 const DIAL_HEIGHT_COMPACT = 667;
 const DIAL_HEIGHT_FULL = 780;
+const DIAL_SIZE_PHONE = 230;
+// Matches the stylesheet's phone breakpoint.
+const PHONE_MAX_WIDTH = 760;
 
 function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -1347,7 +1361,9 @@ function useDialGeometry() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const t = Math.min(1, Math.max(0, (windowHeight - DIAL_HEIGHT_COMPACT) / (DIAL_HEIGHT_FULL - DIAL_HEIGHT_COMPACT)));
-  const size = Math.min(windowWidth - DIAL_SIDE_GUTTER, Math.round(DIAL_SIZE_COMPACT + (DIAL_SIZE_FULL - DIAL_SIZE_COMPACT) * t));
+  const fitted = Math.round(DIAL_SIZE_COMPACT + (DIAL_SIZE_FULL - DIAL_SIZE_COMPACT) * t);
+  // Phones get a smaller dial so the topic, dial, and buttons share one screen.
+  const size = Math.min(windowWidth - DIAL_SIDE_GUTTER, windowWidth <= PHONE_MAX_WIDTH ? DIAL_SIZE_PHONE : fitted);
   const scale = size / DIAL_SIZE_BASE;
   const radius = size * (DIAL_RADIUS_FULL / DIAL_SIZE_FULL);
   return {
@@ -1551,7 +1567,8 @@ function TimerPanel({
           step={EVENT_DIAL_STEP_SECONDS}
         />
         {presetsAbove ? null : presetTabs}
-        {pausable ? (
+        {/* Pause and Stop take Start's place once the timer runs. */}
+        {pausable && active ? (
           <div className="timer-controls">
             <button
               className="timer-control"
@@ -2081,14 +2098,169 @@ function InstructionBlock({ children }: { children: React.ReactNode }) {
   return <div className="instruction-copy">{children}</div>;
 }
 
+type MicrophonePlatform = "ios" | "android" | "desktop";
+
+function microphonePlatform(): MicrophonePlatform {
+  const ua = navigator.userAgent;
+  // iPads report themselves as Macs, so a touch screen gives them away.
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  return "desktop";
+}
+
+// Allowing the microphone for this site, then, if it's still blocked, the device's own settings.
+// Each settings path shows one tap per step.
+const MICROPHONE_STEPS: Record<
+  MicrophonePlatform,
+  { steps: React.ReactNode[]; stillBlocked: { device: string; path: string[]; then: string }[] }
+> = {
+  ios: {
+    steps: [
+      <>Tap <strong>aA</strong> next to the web address.</>,
+      <>Tap <strong>Website Settings</strong>.</>,
+      <>Set <strong>Microphone</strong> to <strong>Allow</strong>.</>,
+    ],
+    stillBlocked: [{ device: "iPhone & iPad", path: ["Settings", "Apps", "Safari", "Microphone"], then: "Choose Allow" }],
+  },
+  android: {
+    steps: [
+      <>Tap the icon <strong>left of the web address</strong>.</>,
+      <>Tap <strong>Permissions</strong>.</>,
+      <>Turn on <strong>Microphone</strong>.</>,
+    ],
+    stillBlocked: [{ device: "Android", path: ["Settings", "Apps", "Chrome", "Permissions", "Microphone"], then: "Choose Allow" }],
+  },
+  desktop: {
+    steps: [
+      <>Click the icon <strong>left of the web address</strong>.</>,
+      <>Set <strong>Microphone</strong> to <strong>Allow</strong>.</>,
+      <>Reload the page if asked.</>,
+    ],
+    stillBlocked: [
+      { device: "Mac", path: ["System Settings", "Privacy & Security", "Microphone"], then: "Turn on your browser" },
+      { device: "Windows", path: ["Settings", "Privacy & security", "Microphone"], then: "Turn on your browser" },
+    ],
+  },
+};
+
+const MIC_ICON = (
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="9" y="2" width="6" height="12" rx="3" />
+    <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+    <path d="M12 18v4" />
+    <path d="M8 22h8" />
+  </svg>
+);
+
+// Our own ask before the browser's prompt, so students know why it's coming and what to tap.
+function MicrophoneAsk({ onAllow, onSkip }: { onAllow: () => void; onSkip: () => void }) {
+  return (
+    <div className="founders-modal-backdrop" role="presentation">
+      <section className="info-modal mic-ask" role="dialog" aria-modal="true" aria-labelledby="mic-ask-title">
+        <span className="mic-ask-icon">{MIC_ICON}</span>
+        <h2 id="mic-ask-title">Allow Mic Permissions</h2>
+        <p>
+          Mojo Speech Prep analyzes your speeches so you can come back to them later. You can still practice, but will be
+          unable to review your speech if you block microphone access.
+        </p>
+        <div className="mic-ask-actions">
+          <button className="primary" type="button" onClick={onAllow}>
+            Allow microphone
+          </button>
+          <button className="mic-ask-skip" type="button" onClick={onSkip}>
+            Not now
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// Shown when the browser has blocked the microphone, with steps for the device in hand.
+function MicrophoneHelp({ onRetry, onClose }: { onRetry: () => void; onClose: () => void }) {
+  const [platform] = useState(microphonePlatform);
+  const { steps, stillBlocked } = MICROPHONE_STEPS[platform];
+  // The title shows whether this site can use the microphone right now, and follows changes made
+  // while it's open. Browsers that can't report it just say "Mic permissions".
+  const [micState, setMicState] = useState<"On" | "Off" | null>(null);
+  useEffect(() => {
+    let status: PermissionStatus | null = null;
+    let cancelled = false;
+    const update = () => setMicState(status?.state === "granted" ? "On" : "Off");
+    navigator.permissions
+      ?.query({ name: "microphone" as PermissionName })
+      .then((result) => {
+        if (cancelled) return;
+        status = result;
+        update();
+        status.addEventListener("change", update);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      status?.removeEventListener("change", update);
+    };
+  }, []);
+  return (
+    <div className="founders-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="info-modal mic-help"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mic-help-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button className="founders-close" type="button" onClick={onClose} aria-label="Close microphone help">
+          ×
+        </button>
+        <h2 id="mic-help-title">Mic permissions{micState ? `: ${micState}` : ""}</h2>
+        <p className="mic-help-lead">Your speech can&apos;t be recorded or analyzed until the microphone is allowed for this site.</p>
+        <ol className="mic-help-steps">
+          {steps.map((step, index) => (
+            <li key={index}>
+              <span className="mic-help-number" aria-hidden="true">{index + 1}</span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="mic-help-blocked">
+          <h3>Still blocked?</h3>
+          {stillBlocked.map(({ device, path, then }) => (
+            <div className="mic-help-device" key={device}>
+              <span className="mic-help-device-name">{device}</span>
+              <span className="mic-help-path">
+                {path.map((part, index) => (
+                  <span key={part}>
+                    {index > 0 ? <span className="mic-help-arrow" aria-hidden="true">›</span> : null}
+                    <span className="mic-help-chip">{part}</span>
+                  </span>
+                ))}
+              </span>
+              <span className="mic-help-then">{then}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mic-help-actions">
+          <button className="secondary" type="button" onClick={onClose}>
+            Continue
+          </button>
+          <button className="primary" type="button" onClick={onRetry}>
+            Try again
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 // Rules copy is shared by each event's setup page and the Rules page.
 function ImpromptuRules() {
   return (
     <>
-      <p>Plan for up to <strong>7 minutes</strong> and speak for up to <strong>7 minutes</strong>. Drag either timer to set its length before you press Start.</p>
+      <p>You get <strong>7 minutes</strong> in all. Drag the bar to split them between prep and speaking before you start.</p>
       <p>Spin for a <strong>theme</strong>, then get three related topics.</p>
       <p><strong>Choose</strong> a topic, then press <strong>Start planning</strong>.</p>
-      <p>On each page, press <strong>Start</strong> to begin the timer. Press <strong>I&apos;m ready to speak</strong> when you finish prepping.</p>
+      <p>Press <strong>Start prep</strong> to begin. Your speaking time starts by itself when prep runs out, or press <strong>Speak now</strong> to start early.</p>
     </>
   );
 }
@@ -2098,7 +2270,7 @@ function ExtempRules() {
     <>
       <p>Answer a current-events question with a clear, organized, evidence-based speech.</p>
       <p>Draw <strong>three questions</strong>, choose one, then press <strong>Start planning</strong>.</p>
-      <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong>. Each timer begins when you press <strong>Start</strong>.</p>
+      <p>Take <strong>30 minutes</strong> to prep, then deliver for <strong>7 minutes</strong>. Press <strong>Start</strong> to begin prep; your speaking time starts by itself when prep runs out or you press <strong>I&apos;m ready to speak</strong>.</p>
     </>
   );
 }
@@ -2241,7 +2413,7 @@ function PrivacyInfoButton() {
   return (
     <InfoTip label="About saving recordings">
       Your privacy matters. Saving recordings is optional and exists only so you can revisit your own practice.
-      Speech Brigade does not listen to, reuse, or train on your audio or transcript.
+      Mojo Speech Prep does not listen to, reuse, or train on your audio or transcript.
     </InfoTip>
   );
 }
@@ -2251,11 +2423,14 @@ function PracticePrivacyOptions({
   saveRecordingEnabled,
   onAnalysisChange,
   onSaveRecordingChange,
+  onMicHelp,
 }: {
   analysisEnabled: boolean;
   saveRecordingEnabled: boolean;
   onAnalysisChange: (enabled: boolean) => void;
   onSaveRecordingChange: (enabled: boolean) => void;
+  // Opens the steps for allowing the microphone.
+  onMicHelp?: () => void;
 }) {
   return (
     <div className="practice-options">
@@ -2270,6 +2445,11 @@ function PracticePrivacyOptions({
         onChange={onSaveRecordingChange}
         info={<PrivacyInfoButton />}
       />
+      {onMicHelp ? (
+        <button className="practice-mic-link" type="button" onClick={onMicHelp}>
+          Mic permissions
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -3557,24 +3737,32 @@ export default function SpeechBrigade() {
   const [authEmail, setAuthEmail] = useState("");
   const [authStatus, setAuthStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [authError, setAuthError] = useState("");
-  // Passwords are the main way in; a magic link stays available for anyone without one.
-  const [authMethod, setAuthMethod] = useState<"password" | "magicLink">("password");
   const [authMode, setAuthMode] = useState<"signIn" | "signUp">("signIn");
   const [authPassword, setAuthPassword] = useState("");
   const [showAuthPassword, setShowAuthPassword] = useState(false);
-  const [authSentKind, setAuthSentKind] = useState<"magicLink" | "confirm" | "reset">("magicLink");
+  const [authSentKind, setAuthSentKind] = useState<"confirm" | "reset">("confirm");
   const [authNeedsConfirm, setAuthNeedsConfirm] = useState(false);
   // Shown on the main button while a reset or confirmation email sends, instead of "Signing in…".
   const [authBusyLabel, setAuthBusyLabel] = useState("");
   // Set when someone arrives from a password reset email, until they choose a new password.
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [signOutStatus, setSignOutStatus] = useState<"idle" | "confirming" | "signingOut">("idle");
-  const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(true);
+  // Speech analysis and Save recording keep whatever was last chosen, round to round and visit to visit.
+  const [speechAnalysisEnabled, setSpeechAnalysisEnabled] = useState(
+    () => typeof window === "undefined" || window.localStorage.getItem(SPEECH_ANALYSIS_KEY) !== "false",
+  );
   const [saveRecordingEnabled, setSaveRecordingEnabled] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("speech-brigade-save-recording") === "true",
   );
   const [analyzingStage, setAnalyzingStage] = useState<AnalyzingStage>("uploading");
   const [recordingError, setRecordingError] = useState("");
+  const [micHelpOpen, setMicHelpOpen] = useState(false);
+  const [micAskOpen, setMicAskOpen] = useState(false);
+  // Once the microphone is allowed, or someone chooses Not now, later events don't ask again.
+  const micGrantedRef = useRef(false);
+  const micAskSkippedRef = useRef(false);
+  // Closing the blocked-microphone steps keeps them from reopening mid-speech.
+  const micHelpClosedRef = useRef(false);
   const [vaultRecordings, setVaultRecordings] = useState<VaultRecording[]>([]);
   const [vaultLoading, setVaultLoading] = useState(false);
   const [vaultError, setVaultError] = useState("");
@@ -3586,6 +3774,13 @@ export default function SpeechBrigade() {
   const [vaultFilters, setVaultFilters] = useState<VaultFilters>(DEFAULT_VAULT_FILTERS);
   const vaultFiltersActive = JSON.stringify(vaultFilters) !== JSON.stringify(DEFAULT_VAULT_FILTERS);
   const [foundersOpen, setFoundersOpen] = useState(false);
+  // The Privacy and Terms pages link to /#founders to open the founders popup here.
+  useEffect(() => {
+    if (window.location.hash !== "#founders") return;
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    const id = window.setTimeout(() => setFoundersOpen(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
   const [selectedPreparedEventId, setSelectedPreparedEventId] = useState<PreparedEventId | null>(null);
   const [preparedResult, setPreparedResult] = useState<PreparedPerformanceResult | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<SpeakingGameId | null>(null);
@@ -3849,7 +4044,6 @@ export default function SpeechBrigade() {
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
     setLockedChoice("");
-    setSpeechAnalysisEnabled(true);
     setRecordingError("");
   };
 
@@ -3859,7 +4053,6 @@ export default function SpeechBrigade() {
     setThemeReelKey((key) => key + 1);
     setThemeSpinning(false);
     setLockedChoice("");
-    setSpeechAnalysisEnabled(true);
     setRecordingError("");
   };
 
@@ -3902,11 +4095,11 @@ export default function SpeechBrigade() {
   const reopenEvent = (openEvent: string) => {
     const [eventKind, eventId] = openEvent.split(":");
     // Put the event's list page underneath so Back from the reopened event lands there.
-    if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) setScreen("gamesSelection");
+    if (eventKind === "game" && SPEAKING_GAME_IDS.includes(eventId as SpeakingGameId)) setScreen("gamesSelection");
     else if (eventKind === "impromptu" || eventKind === "extemp" || (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS)) setScreen("events");
     if (eventKind === "impromptu" || eventKind === "extemp") startMode(eventKind, true);
     else if (eventKind === "prepared" && eventId in PREPARED_EVENT_CONFIGS) startPreparedEvent(eventId as PreparedEventId, true);
-    else if (eventKind === "game" && eventId in SPEAKING_GAME_CONFIGS) startSpeakingGame(eventId as SpeakingGameId);
+    else if (eventKind === "game" && SPEAKING_GAME_IDS.includes(eventId as SpeakingGameId)) startSpeakingGame(eventId as SpeakingGameId);
   };
 
   // Back from a Google or email-link sign-in: the page reloaded, so reopen the event they were opening.
@@ -4067,30 +4260,6 @@ export default function SpeechBrigade() {
     setScreen("gameSetup");
   };
 
-  const sendMagicLink = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!supabase) {
-      setAuthStatus("error");
-      setAuthError("Supabase is not configured for this local preview.");
-      return;
-    }
-    if (!authEmail.trim()) return;
-    setAuthStatus("sending");
-    setAuthError("");
-    const { error } = await supabase.auth.signInWithOtp({
-      email: authEmail.trim(),
-      options: {
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-    if (error) {
-      showAuthError(friendlyAuthError(error.message));
-      return;
-    }
-    setAuthSentKind("magicLink");
-    setAuthStatus("sent");
-  };
-
   const authRedirectUrl = () => (typeof window !== "undefined" ? window.location.origin : undefined);
 
   const showAuthError = (message: string) => {
@@ -4211,7 +4380,6 @@ export default function SpeechBrigade() {
 
   const switchAuthMode = (mode: "signIn" | "signUp") => {
     setAuthMode(mode);
-    setAuthMethod("password");
     setAuthStatus("idle");
     setAuthError("");
     setAuthNeedsConfirm(false);
@@ -4268,6 +4436,58 @@ export default function SpeechBrigade() {
 
   const RECORDING_MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 
+  const isMicrophoneBlocked = (err: unknown) =>
+    err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
+
+  // Asks for the microphone as soon as an event page opens, before any topics are drawn, so
+  // allowing it (which can take a reload) doesn't cost a draw. Our own pop-up explains why before
+  // the browser asks, and a blocked microphone gets steps to allow it. Events that neither analyze
+  // nor save, and microphones already allowed, skip it.
+  const askForMicrophone = async () => {
+    if (!(speechAnalysisEnabled || saveRecordingEnabled) || !navigator.mediaDevices?.getUserMedia) return;
+    if (micGrantedRef.current || micAskSkippedRef.current) return;
+    // Older Safari can't report the permission, so it gets the pop-up until it's allowed once.
+    let state: PermissionState | "unknown" = "unknown";
+    try {
+      state = (await navigator.permissions.query({ name: "microphone" as PermissionName })).state;
+    } catch {
+      state = "unknown";
+    }
+    if (state === "granted") micGrantedRef.current = true;
+    else if (state === "denied") setMicHelpOpen(true);
+    else setMicAskOpen(true);
+  };
+
+  useEffect(() => {
+    if (screen !== "impromptuIntro" && screen !== "extempIntro" && screen !== "preparedEventIntro") return undefined;
+    // Asked after the page paints, so the pop-up opens over the event page.
+    const id = window.setTimeout(() => void askForMicrophone(), 0);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
+
+  // Pressing Start prep asks the browser for the microphone right away, while prep runs, so a
+  // blocked microphone shows its steps during prep rather than once speaking starts.
+  const requestMicrophoneForPrep = () => {
+    if (!(speechAnalysisEnabled || saveRecordingEnabled) || !navigator.mediaDevices?.getUserMedia) return;
+    if (micGrantedRef.current) return;
+    void requestMicrophone();
+  };
+
+  // Brings up the browser's own prompt; a blocked microphone opens the steps to allow it.
+  const requestMicrophone = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      micGrantedRef.current = true;
+      setMicAskOpen(false);
+      setMicHelpOpen(false);
+    } catch (err) {
+      setMicAskOpen(false);
+      if (isMicrophoneBlocked(err)) setMicHelpOpen(true);
+    }
+  };
+
 	  const startRecording = async () => {
 	    setRecordingError("");
 	    if (!isSupabaseConfigured) {
@@ -4286,6 +4506,7 @@ export default function SpeechBrigade() {
       mediaRecorderRef.current = recorder;
       recorder.start();
     } catch (err) {
+      if (isMicrophoneBlocked(err) && !micHelpClosedRef.current) setMicHelpOpen(true);
       setRecordingError(
         err instanceof Error ? err.message : "Microphone access was denied. Analysis will be skipped for this round.",
       );
@@ -4703,11 +4924,10 @@ export default function SpeechBrigade() {
     </div>
   );
 
-  // Running out of prep time rolls straight into delivery with its timer already going. So does
-  // Impromptu's "Speak now"; Extemp's "I'm ready to speak" moves on early and waits for Start.
-  const handlePrepComplete = (elapsed: number, completion: CompletionStatus) => {
+  // Running out of prep time rolls straight into delivery with its timer already going, and so
+  // does finishing prep early (Impromptu's "Speak now", Extemp's "I'm ready to speak").
+  const handlePrepComplete = (elapsed: number) => {
     setRound((current) => ({ ...current, prepSecondsUsed: Math.round(elapsed) }));
-    if (completion !== "expired" && round.mode !== "impromptu") setRoundTimerStarted(false);
     setScreen("recordSpeech");
   };
 
@@ -4956,6 +5176,7 @@ export default function SpeechBrigade() {
           audio.unlock();
           setImpromptuSplit(impromptuPrepSeconds);
           setRoundTimerStarted(true);
+          if (screen === "planSpeech") requestMicrophoneForPrep();
         }}
         onPrepComplete={handlePrepComplete}
         onSpeakComplete={handleDeliveryComplete}
@@ -4989,6 +5210,11 @@ export default function SpeechBrigade() {
         if (enabled) audio.toggleOn();
         else audio.toggleOff();
         setSpeechAnalysisEnabled(enabled);
+        try {
+          window.localStorage.setItem(SPEECH_ANALYSIS_KEY, String(enabled));
+        } catch {
+          // Private browsing can refuse storage; the choice still holds for this visit.
+        }
         setRecordingError("");
       }}
       onSaveRecordingChange={(enabled) => {
@@ -4997,15 +5223,32 @@ export default function SpeechBrigade() {
         setSaveRecordingEnabled(enabled);
         setRecordingError("");
       }}
+      onMicHelp={() => setMicHelpOpen(true)}
     />
   );
+
+  // Timer, prep, and speaking screens leave the footer off so only the round shows.
+  const roundInProgress =
+    screen === "planSpeech" ||
+    screen === "recordSpeech" ||
+    screen === "gameRounds" ||
+    (screen === "preparedEventIntro" && preparedStage === "performance");
 
   const content = (() => {
     switch (screen) {
       case "landing":
         return (
           <section className="hero">
-            <h1>Speech Brigade</h1>
+            <h1 className="hero-logo">
+              <Image
+                unoptimized
+                src="/mojo-speech-prep-logo.png"
+                alt="Mojo Speech Prep"
+                width={900}
+                height={450}
+                priority
+              />
+            </h1>
             <p className="lede">Speech and Debate Practice and Analysis</p>
             <div className="hero-actions">
               <button className="ghost-card" type="button" onClick={() => setScreen("gamesSelection")}>
@@ -5027,20 +5270,13 @@ export default function SpeechBrigade() {
             <p className="eyebrow">Speaking Games</p>
             <h1>Choose Your Game</h1>
             <div className="event-board">
-              <h2 className="event-group-title wide">Team</h2>
-              {SPEAKING_GAME_IDS.filter((gameId) => SPEAKING_GAME_CONFIGS[gameId].team).map((gameId, index) => (
+              {SPEAKING_GAME_IDS.map((gameId, index) => (
                 <button
                   className={`event-card compact ${index === 0 ? "centered-row-start" : ""}`}
                   type="button"
                   key={gameId}
                   onClick={() => startSpeakingGame(gameId)}
                 >
-                  <EventCardTitle name={SPEAKING_GAME_CONFIGS[gameId].name} />
-                </button>
-              ))}
-              <h2 className="event-group-title wide">Individual</h2>
-              {SPEAKING_GAME_IDS.filter((gameId) => !SPEAKING_GAME_CONFIGS[gameId].team).map((gameId) => (
-                <button className="event-card compact" type="button" key={gameId} onClick={() => startSpeakingGame(gameId)}>
                   <EventCardTitle name={SPEAKING_GAME_CONFIGS[gameId].name} />
                 </button>
               ))}
@@ -5156,6 +5392,7 @@ export default function SpeechBrigade() {
                     ]}
                     tones={["blue", "green"]}
                     spinEach
+                    spinAllLabel="Spin both"
                     landInitial
                     onSpinStart={startGameReveal}
                     onLand={(scenarios) => {
@@ -5359,7 +5596,7 @@ export default function SpeechBrigade() {
               </button>
               <h1>{selectedPreparedEvent.name}</h1>
             </div>
-            <RulesLink label="Rules" onOpen={() => openRules(selectedPreparedEvent.id)} />
+            <RulesLink label="How it works" onOpen={() => openRules(selectedPreparedEvent.id)} />
             <div className="input-mode-tabs" role="tablist" aria-label="How to practice">
               {([
                 ["speak", "Speak"],
@@ -5520,10 +5757,6 @@ export default function SpeechBrigade() {
           </button>
         );
         const sentCopy = {
-          magicLink: {
-            lede: "We sent you a sign-in link.",
-            body: <>Check <strong>{authEmail}</strong> for a sign-in link. Opening it will bring you right back here, signed in.</>,
-          },
           confirm: {
             lede: "One more step to create your account.",
             body: <>We sent a confirmation link to <strong>{authEmail}</strong>. Open it to finish creating your account, and it will bring you right back here, signed in. If it isn&apos;t there in a minute, check your spam folder.</>,
@@ -5596,9 +5829,21 @@ export default function SpeechBrigade() {
             ) : authStatus === "sent" ? (
               <div className="auth-sent">
                 <p>{sentCopy.body}</p>
-                <button className="secondary" type="button" onClick={() => setAuthStatus("idle")}>
-                  {authSentKind === "confirm" ? "Back to sign in" : "Use a different email"}
+                <button className="secondary" type="button" onClick={() => switchAuthMode("signIn")}>
+                  Back to sign in
                 </button>
+                {authSentKind === "reset" ? (
+                  <button
+                    className="auth-text-button"
+                    type="button"
+                    onClick={() => {
+                      setAuthEmail("");
+                      switchAuthMode("signIn");
+                    }}
+                  >
+                    Use a different email
+                  </button>
+                ) : null}
               </div>
             ) : (
               <>
@@ -5626,7 +5871,7 @@ export default function SpeechBrigade() {
                 <div className="auth-divider">
                   <span>or</span>
                 </div>
-                <form className="auth-form" onSubmit={authMethod === "password" ? submitPassword : sendMagicLink}>
+                <form className="auth-form" onSubmit={submitPassword}>
                   <div className="auth-field">
                     <label htmlFor="auth-email">Email</label>
                     <input
@@ -5639,40 +5884,34 @@ export default function SpeechBrigade() {
                       onChange={(event) => setAuthEmail(event.target.value)}
                     />
                   </div>
-                  {authMethod === "password" ? (
-                    <div className="auth-field">
-                      <label htmlFor="auth-password">Password</label>
-                      <div className="auth-password-input">
-                        <input
-                          id="auth-password"
-                          type={showAuthPassword ? "text" : "password"}
-                          required
-                          minLength={authMode === "signUp" ? 6 : undefined}
-                          autoComplete={authMode === "signUp" ? "new-password" : "current-password"}
-                          placeholder={authMode === "signUp" ? "At least 6 characters" : undefined}
-                          value={authPassword}
-                          onChange={(event) => setAuthPassword(event.target.value)}
-                        />
-                        {passwordToggle}
-                      </div>
+                  <div className="auth-field">
+                    <label htmlFor="auth-password">Password</label>
+                    <div className="auth-password-input">
+                      <input
+                        id="auth-password"
+                        type={showAuthPassword ? "text" : "password"}
+                        required
+                        minLength={authMode === "signUp" ? 6 : undefined}
+                        autoComplete={authMode === "signUp" ? "new-password" : "current-password"}
+                        placeholder={authMode === "signUp" ? "At least 6 characters" : undefined}
+                        value={authPassword}
+                        onChange={(event) => setAuthPassword(event.target.value)}
+                      />
+                      {passwordToggle}
                     </div>
-                  ) : null}
+                  </div>
                   <button className="auth-primary-button" type="submit" disabled={authStatus === "sending"}>
                     {authStatus === "sending"
                       ? authBusyLabel
                         ? authBusyLabel
-                        : authMethod === "magicLink"
-                          ? "Sending…"
-                          : authMode === "signUp"
-                            ? "Creating account…"
-                            : "Signing in…"
-                      : authMethod === "magicLink"
-                        ? "Email me a magic link"
                         : authMode === "signUp"
-                          ? "Create account"
-                          : "Sign in"}
+                          ? "Creating account…"
+                          : "Signing in…"
+                      : authMode === "signUp"
+                        ? "Create account"
+                        : "Sign in"}
                   </button>
-                  {authMethod === "password" && authMode === "signIn" ? (
+                  {authMode === "signIn" ? (
                     <button
                       type="button"
                       className="auth-text-button auth-forgot"
@@ -5690,11 +5929,7 @@ export default function SpeechBrigade() {
                   ) : null}
                 </form>
                 <div className="auth-switches">
-                  {authMethod === "magicLink" ? (
-                    <button type="button" className="auth-text-button" onClick={() => switchAuthMode("signIn")}>
-                      Use a password instead
-                    </button>
-                  ) : authMode === "signIn" ? (
+                  {authMode === "signIn" ? (
                     <p>
                       New here?{" "}
                       <button type="button" className="auth-text-button" onClick={() => switchAuthMode("signUp")}>
@@ -5709,20 +5944,6 @@ export default function SpeechBrigade() {
                       </button>
                     </p>
                   )}
-                  {authMethod === "password" ? (
-                    <button
-                      type="button"
-                      className="auth-text-button muted"
-                      onClick={() => {
-                        setAuthMethod("magicLink");
-                        setAuthStatus("idle");
-                        setAuthError("");
-                        setAuthNeedsConfirm(false);
-                      }}
-                    >
-                      Email me a sign-in link instead
-                    </button>
-                  ) : null}
                 </div>
               </>
             )}
@@ -5855,7 +6076,6 @@ export default function SpeechBrigade() {
             ) : (
               <>
                 <div className="setup-step spin-screen">
-                  <p className="eyebrow step-heading"><strong>Spin</strong> for your theme</p>
                   <TopicSpinner
                     key={themeReelKey}
                     items={themeNames}
@@ -5870,7 +6090,6 @@ export default function SpeechBrigade() {
                 </div>
                 {setupStage !== "spin" ? (
                   <div className="setup-step spin-screen" ref={setupStage === "topics" ? latestSetupStepRef : undefined}>
-                    <p className="eyebrow step-heading"><strong>Spin</strong> for a list of topics, and <strong>choose</strong> which to speak on</p>
                     <TopicSpinnerGroup
                       count={3}
                       items={impromptuThemeTopics}
@@ -5908,6 +6127,7 @@ export default function SpeechBrigade() {
               onStart={() => {
                 audio.unlock();
                 setRoundTimerStarted(true);
+                requestMicrophoneForPrep();
               }}
               onComplete={handlePrepComplete}
               onWarningSecond={warningTone}
@@ -6193,7 +6413,7 @@ export default function SpeechBrigade() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-	      <header className="app-header" ref={headerRef}>
+	      <header className={`app-header ${SETUP_BACK_SCREENS.has(screen) ? "has-back" : ""}`} ref={headerRef}>
 	        {screen === "landing" ? (
 	          <>
 	            <div className="header-spacer" />
@@ -6201,18 +6421,20 @@ export default function SpeechBrigade() {
 	          </>
 	        ) : (
 	          <>
-	            {/* Text wordmark on desktop, round logo on phones. */}
-	            <button className="wordmark" type="button" onClick={goHome} aria-label="Return home">
-	              <span className="wordmark-text">
-	                <span>Speech</span> Brigade
-	              </span>
+	            {/* Phones show Back here in place of the logo; desktop keeps it beside the title. */}
+	            {SETUP_BACK_SCREENS.has(screen) ? (
+	              <button className="back-link header-back" type="button" onClick={goBack}>
+	                ← Back
+	              </button>
+	            ) : null}
+	            <button className="wordmark" type="button" onClick={goHome} aria-label="Mojo Speech Prep, return home">
 	              <Image
 	                unoptimized
 	                className="wordmark-logo"
-	                src="/speech-brigade-logo.png"
+	                src="/mojo-speech-prep-logo.png"
 	                alt=""
-	                width={64}
-	                height={64}
+	                width={900}
+	                height={450}
 	                priority
 	              />
 	            </button>
@@ -6257,32 +6479,7 @@ export default function SpeechBrigade() {
       <div className={`screen-frame ${screen === "landing" ? "landing-frame" : ""}`} key={round.mode === "impromptu" && (screen === "planSpeech" || screen === "recordSpeech") ? "impromptuRound" : screen}>
         {content}
       </div>
-      {screen === "landing" ? (
-        // A quiet footer for the tip jar and the founders, so nothing floats over the page on phones.
-        <footer className="home-footer">
-          <a
-            className="home-footer-tip"
-            href="https://buymeacoffee.com/speechbrigade"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Leave a tip to keep Speech Brigade free"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-            </svg>
-            Leave a tip
-          </a>
-          <span aria-hidden="true">·</span>
-          <button className="home-footer-founders" type="button" onClick={() => setFoundersOpen(true)}>
-            Meet the founders
-          </button>
-          <span className="home-footer-legal">
-            <a href="/privacy/">Privacy</a>
-            <span aria-hidden="true">·</span>
-            <a href="/terms/">Terms</a>
-          </span>
-        </footer>
-      ) : null}
+      {FOOTERLESS_SCREENS.has(screen) || roundInProgress ? null : <SiteFooter onMeetFounders={() => setFoundersOpen(true)} />}
       {infoModal ? (
         <div
           className="founders-modal-backdrop"
@@ -6318,6 +6515,24 @@ export default function SpeechBrigade() {
           </section>
         </div>
       ) : null}
+      {micAskOpen ? (
+        <MicrophoneAsk
+          onAllow={() => void requestMicrophone()}
+          onSkip={() => {
+            micAskSkippedRef.current = true;
+            setMicAskOpen(false);
+          }}
+        />
+      ) : null}
+      {micHelpOpen ? (
+        <MicrophoneHelp
+          onRetry={() => void requestMicrophone()}
+          onClose={() => {
+            micHelpClosedRef.current = true;
+            setMicHelpOpen(false);
+          }}
+        />
+      ) : null}
       {foundersOpen ? (
         <div
           className="founders-modal-backdrop"
@@ -6339,7 +6554,7 @@ export default function SpeechBrigade() {
             >
               ×
             </button>
-            <p className="eyebrow">Speech Brigade</p>
+            <p className="eyebrow">Mojo Speech Prep</p>
             <h2 id="founders-title">Meet the Founders</h2>
             <div className="founders-grid">
               <article className="founder-card">
