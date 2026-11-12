@@ -20,7 +20,7 @@ export function SiteFooter({ onMeetFounders }: { onMeetFounders?: () => void }) 
     <footer className="home-footer">
       <a
         className="home-footer-tip"
-        href="https://buymeacoffee.com/speechbrigade"
+        href="https://buymeacoffee.com/mojospeechprep"
         target="_blank"
         rel="noreferrer"
         aria-label="Leave a tip to keep Mojo Speech Prep free"
